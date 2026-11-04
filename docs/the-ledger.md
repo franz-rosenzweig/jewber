@@ -16,7 +16,8 @@ The ledger is the money and the people. I open it from the money pill on my map.
 
 ## The people
 
-- **Wants to join:** someone who asked from the sign-in screen. Add lets them in and sends the invitation email, and No says no, quietly.
+- **Wants to join:** people who signed up with the link and proved their email, with how we know each other and their phone #. Approve makes their account and sends the "You're in" email, and No says no, quietly. They also show up on my home screen while I'm not on a ride.
+- **Sign-up link:** the /join link, ready to share (or copied, where sharing isn't there).
 - **Friends:** everyone who can sign in. Add a name and an email to invite someone, or Remove to take them off (which also signs them out).
 
 ## Settings

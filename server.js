@@ -354,7 +354,8 @@ function driverView(u) {
     tzedakah: tzedakahJar(),
     brachotGot: rides.filter((r) => r.payment && r.payment.tip && r.payment.tip.kind === 'bracha').sort((a, b) => b.payment.at - a.payment.at).slice(0, 10).map((r) => ({ name: userName(r.rider), text: r.payment.tip.text, at: r.payment.at })),
     kvetches: S.kvetches.slice(-10).reverse().map((k) => ({ ...k, name: userName(k.uid) })),
-    joins: Object.values(S.joins).sort((a, b) => a.at - b.at),
+    joins: Object.values(S.joins).sort((a, b) => a.at - b.at).map(({ pass, ...j }) => j),
+    joinUrl: PUBLIC_URL + '/join',
     rating: ratingOf(null, 'rating'),
     app: appInfo(),
     paypal: Object.values(S.paypal).filter((o) => !['cancelled', 'expired'].includes(o.status) && (o.status !== 'created' || now() - o.created < 6 * 3600e3)).sort((a, b) => b.created - a.created).slice(0, 15)
@@ -541,7 +542,10 @@ on('POST', '/api/auth/code', async ({ body, req }) => {
   const email = cleanEmail(body.email);
   if (!validEmail(email)) fail(400, 'bad-email', 'That email looks off');
   if (limited('ip:' + ipOf(req), 8, 3600e3) || limited('em:' + email, 4, 15 * 60e3) || limited('all', 100, 3600e3)) fail(429, 'slow-down', 'Too many codes. Try again later.');
-  if (!S.allowed[email] && email !== S.settings.driverEmail) fail(403, 'not-on-list', 'Not on the list');
+  if (!S.allowed[email] && email !== S.settings.driverEmail) {
+    if (S.joins[email]) fail(403, 'pending', 'Signed up. Waiting for approval.');
+    fail(403, 'not-on-list', 'Not on the list');
+  }
   const code = String(crypto.randomInt(0, 1e6)).padStart(6, '0');
   codes.set(email, { hash: sha(code + email), exp: now() + 10 * 60e3, tries: 0 });
   const m = emails.code({ code, url: PUBLIC_URL });
@@ -593,6 +597,7 @@ on('POST', '/api/auth/password', async ({ body, req, res }) => {
   if (fails.length >= 8) fail(429, 'locked', 'Too many tries. Use a code, or try again in 15 minutes.');
   const u = Object.values(S.users).find((x) => x.email === login || (x.username && x.username === login));
   const ok = await checkPass(pw, u && u.pass);
+  if (!u && S.joins[login] && S.joins[login].pass && await checkPass(pw, S.joins[login].pass)) fail(403, 'pending', 'Signed up. Waiting for approval.');
   if (!ok || !u || (!S.allowed[u.email] && u.email !== S.settings.driverEmail)) {
     fails.push(now());
     pwFails.set(login, fails);
@@ -1102,31 +1107,58 @@ on('POST', '/api/friends', async ({ body }) => {
   return { ok: true };
 }, driverOnly);
 
-// Asking to join: someone not on the list leaves a name and an email; the driver says yes or no.
+// Signing up (the /join link): a name, an email, a phone #, how we know each other and, if they
+// like, a password. The email is proven with a code before the driver hears a thing, so nobody can
+// sign up as someone else (with their own password) and get in when the driver says yes.
+const signups = new Map(); // email -> what they typed, until the code comes back
 on('POST', '/api/auth/join', async ({ body, req }) => {
   const email = cleanEmail(body.email);
   const name = clip(body.name, 40);
   if (!validEmail(email)) fail(400, 'bad-email', 'That email looks off');
   if (!name) fail(400, 'no-name', 'Add your name');
   if (S.allowed[email] || email === S.settings.driverEmail) return { ok: true, allowed: true };
-  if (S.joins[email]) return { ok: true };
-  if (limited('join:' + ipOf(req), 3, 3600e3) || limited('join', 20, 86400e3) || Object.keys(S.joins).length >= 50) fail(429, 'slow-down', 'Too many asks. Try again later.');
-  S.joins[email] = { email, name, at: now() };
-  store.save();
-  changed();
-  notifyDriver(`${name} wants to join`, email, { signal: true, tag: 'join' });
+  const pw = String(body.password || '');
+  if (pw && pw.length < 8) fail(400, 'short-password', 'Passwords are at least 8 characters');
+  if (pw.length > 200) fail(400, 'long-password', 'That password is too long');
+  if (limited('join:' + ipOf(req), 4, 3600e3) || limited('joinem:' + email, 3, 3600e3) || limited('join', 30, 86400e3) || Object.keys(S.joins).length >= 50) fail(429, 'slow-down', 'Too many sign-ups. Try again later.');
+  const code = String(crypto.randomInt(0, 1e6)).padStart(6, '0');
+  signups.set(email, { name, phone: clip(body.phone, 30), note: clip(body.note, 200), pass: pw ? await hashPass(pw) : null, hash: sha(code + email), exp: now() + 15 * 60e3, tries: 0 });
+  const m = emails.code({ code, url: PUBLIC_URL, join: true });
+  await mail.send(email, m.subject, m.text, m.html);
   return { ok: true };
 }, { open: true });
 
+on('POST', '/api/auth/join/verify', async ({ body }) => {
+  const email = cleanEmail(body.email);
+  const j = signups.get(email);
+  const code = String(body.code || '').replace(/\D/g, '');
+  if (!j || j.exp < now()) fail(400, 'code-expired', 'That code expired. Sign up again.');
+  if (++j.tries > 5) { signups.delete(email); fail(429, 'too-many-tries', 'Too many tries. Sign up again.'); }
+  if (sha(code + email) !== j.hash) fail(400, 'wrong-code', 'Wrong code');
+  signups.delete(email);
+  if (S.allowed[email] || email === S.settings.driverEmail) return { ok: true, allowed: true };
+  const again = S.joins[email];
+  S.joins[email] = { email, name: j.name, phone: j.phone, note: j.note, pass: j.pass, at: again ? again.at : now() };
+  store.save();
+  changed();
+  if (!again) notifyDriver(`${j.name} wants to join`, j.note || email, { signal: true, tag: 'join' });
+  return { ok: true };
+}, { open: true });
+
+// Approving makes the account then and there, with the phone # and password from the sign-up.
 on('POST', '/api/joins/:email/yes', async ({ params }) => {
   const email = cleanEmail(decodeURIComponent(params.email));
   const j = S.joins[email];
   if (!j) fail(404, 'no-ask');
   S.allowed[email] = { name: j.name, added: now() };
   delete S.joins[email];
+  const u = userFor(email);
+  if (j.phone && !u.phone) u.phone = j.phone;
+  if (j.pass && !u.pass) u.pass = j.pass;
   store.save();
   changed();
-  invite(email, j.name);
+  const m = emails.approved({ driver: driverName(), name: j.name, email, password: !!j.pass, url: PUBLIC_URL });
+  mail.send(email, m.subject, m.text, m.html).catch((e) => console.error('approved mail:', e.message));
   return { ok: true };
 }, driverOnly);
 

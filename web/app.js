@@ -248,6 +248,7 @@
     };
   }
   function setView(v) {
+    plainPath();
     const was = V && V.me.role;
     const before = V && V.me.role !== 'driver' && V.ride ? `${V.ride.id}|${V.ride.state}` : '';
     const after = v.me.role !== 'driver' && v.ride ? `${v.ride.id}|${v.ride.state}` : '';
@@ -264,10 +265,11 @@
     driverGps();
     render();
   }
+  function plainPath() { if (location.pathname === '/join') { try { history.replaceState(null, '', '/'); } catch {} } }
   function signedOut() {
     V = null;
     L.screen = 'signin';
-    L.signin = L.signin || { email: '', sent: false, code: '', err: '', pw: (() => { try { return localStorage.getItem('jb.signin') === 'password'; } catch { return false; } })() };
+    L.signin = L.signin || { email: '', sent: false, code: '', err: '', join: location.pathname === '/join', pw: (() => { try { return localStorage.getItem('jb.signin') === 'password'; } catch { return false; } })() };
     if (APP && APP.signedOut) APP.signedOut();
     render();
   }
@@ -357,6 +359,12 @@
     }
     mapKind = kind;
   }
+  // A sign-up waiting for the driver: who, how we know each other, and the two buttons.
+  function joinRow(j) {
+    const sub = [j.note, j.email, j.phone].filter(Boolean).join(' · ');
+    return `<div class="friend joinrow"><div class="av sm" style="background:var(--n-chip)">${initial(j.name)}</div><div class="grow" style="min-width:0"><b class="ellipsis">${esc(j.name)}</b><small class="joinsub">${esc(sub)}</small></div><button class="gbtn" data-act="joinNo" data-email="${esc(j.email)}">No</button><button class="gbtn fill" data-act="joinYes" data-email="${esc(j.email)}">Approve</button></div>`;
+  }
+
   // ---- the map buttons: where I am, and north ----------------------------------------------
   // Locate: one tap follows you with the blue dot, a second turns the map with the phone's
   // compass, a third goes back to north-up. The compass shows when the map is turned; a tap
@@ -741,24 +749,66 @@
   // ---- sign in --------------------------------------------------------------------------
   function scrSignin() {
     const s = L.signin;
+    if (s.join) return scrJoin(s);
     if (s.pw) return scrPassword(s);
-    const digits = (s.code || '').split('');
-    const boxes = Array.from({ length: 6 }, (_, i) => `<span class="${digits[i] ? 'f' : i === digits.length ? 'c' : ''}">${esc(digits[i] || '')}</span>`).join('');
+    const boxes = codeBoxes(s.code);
     return {
       html: `
       ${scrSignin.hero}
-      <form class="signin" data-form="${s.join ? 'join' : s.sent ? 'verify' : 'code'}">
+      <form class="signin" data-form="${s.sent ? 'verify' : 'code'}">
         <div><label class="lab" for="email">Email</label>
         <input id="email" class="field" type="email" autocomplete="email" inputmode="email" data-bind="signin.email" value="${esc(s.email)}" ${s.sent ? 'readonly' : ''} required></div>
         ${s.sent ? `<div><label class="lab" for="code">Code</label><label class="code"><input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" data-bind="signin.code" value="${esc(s.code)}" aria-label="Code">${boxes}</label></div>` : ''}
-        ${s.join ? `<div><label class="lab" for="jname">Your name</label><input id="jname" class="field" autocomplete="name" data-bind="signin.name" value="${esc(s.name || '')}" required></div>` : ''}
         <div class="err" role="alert">${esc(s.err || '')}</div>
         <div class="spacer"></div>
-        ${s.asked ? `<div class="say">${icon('check')}Sent. You'll get an email.</div>` : `<button class="btn" type="submit" ${L.busy ? 'disabled' : ''}>${s.join ? 'Ask to join' : s.sent ? 'Sign in' : 'Send code'}</button>`}
-        ${s.sent ? '<button class="link" type="button" data-act="newCode">New code</button>' : s.join || s.asked ? '<button class="link muted" type="button" data-act="backToSignIn">Sign in</button>' : '<div class="row" style="justify-content:center;gap:18px"><button class="link" type="button" data-act="usePw">Use a password</button><button class="link muted" type="button" data-act="askJoin">New here? Ask to join</button></div>'}
-        ${offerApp && !s.sent && !s.join && !s.asked ? `<a class="link muted getlink" href="${getHref}">${icon('download')}Get the app</a>` : ''}
+        <button class="btn" type="submit" ${L.busy ? 'disabled' : ''}>${s.sent ? 'Sign in' : 'Send code'}</button>
+        ${s.sent ? '<button class="link" type="button" data-act="newCode">New code</button>' : '<div class="row" style="justify-content:center;gap:18px"><button class="link" type="button" data-act="usePw">Use a password</button><button class="link muted" type="button" data-act="askJoin">New here? Sign up</button></div>'}
+        ${offerApp && !s.sent ? `<a class="link muted getlink" href="${getHref}">${icon('download')}Get the app</a>` : ''}
       </form>`,
     };
+  }
+
+  function codeBoxes(code) {
+    const digits = (code || '').split('');
+    return Array.from({ length: 6 }, (_, i) => `<span class="${digits[i] ? 'f' : i === digits.length ? 'c' : ''}">${esc(digits[i] || '')}</span>`).join('');
+  }
+
+  // Signing up, from the /join link: the details, then the code from the email, then a wait for the driver.
+  function scrJoin(s) {
+    const hero = scrSignin.hero.replace('class="hero"', 'class="hero short"');
+    if (s.asked) {
+      return { html: hero + `
+      <form class="signin signup" data-form="none">
+        <div class="kicker">Sign up</div>
+        <div class="say">${icon('check')}You're on the list. You'll get an email when you're in.</div>
+        <div class="spacer"></div>
+        <button class="link muted" type="button" data-act="backToSignIn">Sign in</button>
+      </form>` };
+    }
+    if (s.jsent) {
+      return { html: hero + `
+      <form class="signin signup" data-form="joinverify">
+        <div class="kicker">Sign up</div>
+        <div><label class="lab" for="email">Email</label><input id="email" class="field" type="email" value="${esc(s.email)}" readonly></div>
+        <div><label class="lab" for="code">Code</label><label class="code"><input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" data-bind="signin.code" value="${esc(s.code || '')}" aria-label="Code">${codeBoxes(s.code)}</label></div>
+        <div class="err" role="alert">${esc(s.err || '')}</div>
+        <div class="spacer"></div>
+        <button class="btn" type="submit" ${L.busy ? 'disabled' : ''}>Finish</button>
+        <button class="link muted" type="button" data-act="joinAgain">Start over</button>
+      </form>` };
+    }
+    return { html: hero + `
+      <form class="signin signup" data-form="join">
+        <div class="kicker">Sign up</div>
+        <div><label class="lab" for="jname">Your name</label><input id="jname" class="field" autocomplete="name" data-bind="signin.name" value="${esc(s.name || '')}" required></div>
+        <div><label class="lab" for="email">Email</label><input id="email" class="field" type="email" autocomplete="email" inputmode="email" data-bind="signin.email" value="${esc(s.email || '')}" required></div>
+        <div><label class="lab" for="jphone">Phone #</label><input id="jphone" class="field" type="tel" autocomplete="tel" data-bind="signin.phone" value="${esc(s.phone || '')}"></div>
+        <div><label class="lab" for="jnote">How do we know each other?</label><input id="jnote" class="field" maxlength="200" data-bind="signin.note" value="${esc(s.note || '')}"></div>
+        <div><label class="lab" for="jpass">Password <span class="muted">· optional</span></label><input id="jpass" class="field" type="password" autocomplete="new-password" minlength="8" data-bind="signin.jpass" value="${esc(s.jpass || '')}"></div>
+        <div class="err" role="alert">${esc(s.err || '')}</div>
+        <button class="btn" type="submit" ${L.busy ? 'disabled' : ''}>Sign up</button>
+        <button class="link muted" type="button" data-act="backToSignIn">I have an account</button>
+      </form>` };
   }
 
   scrSignin.hero = `
@@ -841,7 +891,7 @@
         <div class="top"><button type="button" class="pill" data-act="logo" aria-label="Jewber"><span class="logo">Jewber</span></button><div class="row">${HOLIDAY_CHIP[cal().holiday] ? `<div class="pill gold">${esc(HOLIDAY_CHIP[cal().holiday]())}</div>` : getPillOn() ? `<button type="button" class="pill getapp" data-act="getApp">${icon('download')}Get the app</button>` : ''}${shabbatChip()}<button class="round" data-act="go" data-to="account" aria-label="Account" style="${V.me.photo ? `background:center/cover url('${esc(V.me.photo)}')` : ''}">${V.me.photo ? '' : initial(V.me.name)}</button></div></div>
         <section class="sheet flush" data-keep="home">
           <div class="handle"></div>
-          <div class="hello"><div class="col"><div class="kicker">${esc(new Date(T()).toLocaleDateString([], { weekday: 'long' }))} · ${esc(hebDate(T()))}${cal().parsha && [4, 5, 6].includes(new Date(T()).getDay()) ? ` · ${esc(cal().parsha)}` : ''}</div><div class="display">${esc(greeting())}, ${esc(V.me.name)}</div></div></div>
+          <div class="hello"><div class="col"><div class="kicker">${esc(new Date(T()).toLocaleDateString([], { weekday: 'long' }))} · ${esc(hebDate(T()))}${cal().parsha && [4, 5, 6].includes(new Date(T()).getDay()) ? ` · ${esc(cal().parsha)}` : ''}</div><div class="display">${esc(greeting())}, ${esc(String(V.me.name).trim().split(/\s+/)[0])}</div></div></div>
           ${driverRow()}
           <button type="button" class="where" data-act="whereTo">${icon('search')}<b>Where to?</b><span class="now">${icon('clock')}${d.onDuty ? 'Now' : 'Later'}</span></button>
           ${booked ? `<div class="list">${booked}</div>` : ''}
@@ -1304,8 +1354,11 @@
           return `<div class="row"><div class="col grow"><b>${esc(whenText(b.when))} · ${esc(b.rider.name)}</b><span class="muted small ellipsis">${esc(b.pickup.label)} → ${esc(b.dropoff.label)}</span></div>${soon ? `<button class="gbtn fill" data-act="go2" data-id="${b.id}">Go</button>` : ''}<button class="gbtn" data-act="cancelRide" data-id="${b.id}">Cancel</button></div>`;
         }).join('');
         const sh = V.shabbat;
+        const js = V.joins || [];
+        const joins = js.length ? `<div class="col" style="gap:10px"><div class="kicker">Wants to join</div>${js.slice(0, 3).map(joinRow).join('')}${js.length > 3 ? `<button class="link" style="align-self:flex-start;padding:0;height:auto" data-act="go" data-to="ledger">+${js.length - 3} more</button>` : ''}</div>` : '';
         bottom = `<section class="idle">
           <div class="row between"><div class="display">${sh.closed ? 'Shabbat Shalom' : d.onDuty ? 'Waiting for requests' : 'Off duty'}</div>${sh.soon ? `<span class="gchip">${icon('candles')}&nbsp;${esc(hm(sh.start - T()))}</span>` : ''}</div>
+          ${joins}
           ${booked}
         </section>`;
       }
@@ -1391,7 +1444,7 @@
       const owed = V.friends.filter((f) => owedText(f.owed)).map((f) => `<div class="friend">${avatar({ id: f.uid, name: f.name, photo: f.photo, color: f.color }, 'sm')}<div class="grow"><b>${esc(f.name)}</b><small>${esc(owedText(f.owed))} · ${f.owed.rides.length} ride${f.owed.rides.length === 1 ? '' : 's'}</small></div><button class="gbtn" data-act="nudge" data-uid="${f.uid}">Nudge</button><button class="gbtn fill" data-act="allPaid" data-uid="${f.uid}">Paid</button></div>`).join('');
       const PPS = { created: 'Waiting', pending: 'Pending', paid: 'Paid', refunded: 'Refunded', cancelled: 'Cancelled', failed: "Didn't go through", expired: 'Expired' };
       const pps = (V.paypal || []).filter((o) => o.status !== 'cancelled' && o.status !== 'expired').map((o) => `<div class="friend"><span class="pm paypal" style="width:40px;height:40px;border-radius:20px">P</span><div class="grow"><b>${esc(o.name)} · ${usd(o.amount)}${o.kind === 'tab' ? ` · ${o.rides} rides` : ''}</b><small>${o.status === 'paid' ? `${o.net !== null ? usd(o.net) + ' after fee · ' : ''}${esc(whenText(o.paidAt))}` : esc(PPS[o.status] || o.status)}</small></div>${o.status === 'paid' ? `<button class="gbtn" data-act="ppRefund" data-id="${esc(o.id)}" data-amt="${o.amount}">Refund</button>` : ''}</div>`).join('');
-      const joins = (V.joins || []).map((j) => `<div class="friend"><div class="av sm" style="background:var(--n-chip)">${initial(j.name)}</div><div class="grow"><b>${esc(j.name)}</b><small>${esc(j.email)}</small></div><button class="gbtn" data-act="joinNo" data-email="${esc(j.email)}">No</button><button class="gbtn fill" data-act="joinYes" data-email="${esc(j.email)}">Add</button></div>`).join('');
+      const joins = (V.joins || []).map(joinRow).join('');
       const kv = V.kvetches.map((k) => `<div class="friend"><div class="grow"><b>${esc(k.name)}</b><small style="white-space:normal">${esc(k.text)}</small></div><span class="small" style="color:var(--n-muted)">${esc(whenText(k.at))}</span></div>`).join('');
       const handles = Object.entries(s.handles).filter(([, v]) => v).map(([k]) => payOf(k).name).join(', ');
       const pushOk = !APP && 'serviceWorker' in navigator && 'PushManager' in window;
@@ -1411,6 +1464,7 @@
             ${row('mHandles', 'Pay me at', handles || 'Not set')}
             ${row('mCar', 'Car', [s.car, s.plate].filter(Boolean).join(' · ') || 'Not set')}
             ${row('mFriends', 'Friends', String(V.friends.length))}
+            <button type="button" class="drow" data-act="shareJoin"><span class="grow">Sign-up link</span><small>${esc((V.joinUrl || '').replace(/^https?:\/\//, ''))}</small>${icon('chev')}</button>
             ${row('mTheme', 'Theme', { auto: 'Auto', light: 'Light', dark: 'Dark' }[themePref()])}
             ${row('mNavApp', 'Directions', { jewber: 'Jewber', waze: 'Waze', gmaps: 'Google Maps' }[s.navApp || 'jewber'])}
             ${row('mCity', 'Shabbat times', V.shabbat.cityName + (s.city === 'auto' ? ' (auto)' : ''))}
@@ -1667,6 +1721,12 @@
         <div><label class="lab" for="m-plate">Plate</label><input id="m-plate" class="field" data-bind="modal.plate" value="${esc(s.plate || '')}" style="text-transform:uppercase"></div>
         <div><label class="lab" for="m-dphone">Phone</label><input id="m-dphone" class="field" type="tel" data-bind="modal.phone" value="${esc(s.phone || '')}"></div>
         <button class="btn gold" data-act="saveSettings" data-keys="name,car,plate,phone">Save</button>
+      </div>`;
+    },
+    joinLink() {
+      return `<div class="scrim" data-act="closeModal"></div><div class="modal night" role="dialog" aria-label="Sign-up link">
+        <div class="handle"></div><div class="h2">Sign-up link</div>
+        <input id="m-joinurl" class="field" readonly value="${esc(V.joinUrl)}" aria-label="Sign-up link">
       </div>`;
     },
     friends() {
@@ -2009,9 +2069,26 @@
       toast(V.me.hasPassword ? 'Password changed' : 'Password set. Sababa.');
     }),
     newCode: () => { L.signin = { email: L.signin.email, sent: false, code: '', err: '' }; render(); },
+    joinAgain: () => { L.signin.jsent = false; L.signin.code = ''; L.signin.err = ''; render(); },
     askJoin: () => { L.signin.join = true; L.signin.err = ''; render(); setTimeout(() => { const el = $('#email'); if (el && !el.value) el.focus(); else { const n = $('#jname'); if (n) n.focus(); } }, 50); },
     backToSignIn: () => { L.signin = { email: L.signin.email, sent: false, code: '', err: '' }; render(); },
-    joinYes: (el) => act(async () => { await api('POST', `/api/joins/${encodeURIComponent(el.dataset.email)}/yes`); toast('Added. Invite sent.'); }),
+    joinYes: (el) => act(async () => { await api('POST', `/api/joins/${encodeURIComponent(el.dataset.email)}/yes`); toast('Approved'); }),
+    shareJoin: async () => {
+      const url = V.joinUrl;
+      if (navigator.share) { try { await navigator.share({ title: 'Jewber', url }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
+      const t = document.createElement('textarea');
+      t.value = url;
+      t.setAttribute('readonly', '');
+      t.style.cssText = 'position:fixed;opacity:0;top:0';
+      document.body.appendChild(t);
+      t.select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch {}
+      t.remove();
+      if (!ok) { try { await navigator.clipboard.writeText(url); ok = true; } catch {} }
+      if (ok) toast('Link copied');
+      else { L.modal = { kind: 'joinLink' }; render(); setTimeout(() => { const el = $('#m-joinurl'); if (el) { el.focus(); el.select(); } }, 50); }
+    },
     joinNo: (el) => act(async () => { await api('POST', `/api/joins/${encodeURIComponent(el.dataset.email)}/no`); }),
 
     // driver
@@ -2093,7 +2170,7 @@
     if (b === 'signin.code') {
       L.signin.code = el.value.replace(/\D/g, '').slice(0, 6);
       render();
-      if (L.signin.code.length === 6) verify();
+      if (L.signin.code.length === 6) { if (L.signin.join && L.signin.jsent) joinVerify(); else verify(); }
       return;
     }
     setPath(b, el.value);
@@ -2123,6 +2200,7 @@
     if (f.dataset.form === 'code') sendCode();
     if (f.dataset.form === 'verify') verify();
     if (f.dataset.form === 'join') askToJoin();
+    if (f.dataset.form === 'joinverify') joinVerify();
     if (f.dataset.form === 'password') passwordIn();
     if (f.dataset.form === 'savePassword') ACTS.savePassword();
   });
@@ -2162,15 +2240,30 @@
   }
   async function askToJoin() {
     const s = L.signin;
+    if (L.busy) return;
     s.err = '';
     L.busy = true;
     render();
     try {
-      const j = await api('POST', '/api/auth/join', { email: s.email, name: s.name });
+      const j = await api('POST', '/api/auth/join', { email: s.email, name: s.name, phone: s.phone || '', note: s.note || '', password: s.jpass || '' });
       if (j.allowed) { s.join = false; L.busy = false; sendCode(); return; }
-      s.join = false;
-      s.asked = true;
+      s.jsent = true;
+      s.code = '';
+      setTimeout(() => { const el = $('#code'); if (el) el.focus(); }, 50);
     } catch (e) { s.err = e.message; } finally { L.busy = false; render(); }
+  }
+  async function joinVerify() {
+    const s = L.signin;
+    if (L.busy) return;
+    s.err = '';
+    L.busy = true;
+    render();
+    try {
+      const j = await api('POST', '/api/auth/join/verify', { email: s.email, code: s.code });
+      if (j.allowed) { L.signin = { email: s.email, sent: false, code: '', err: '' }; L.busy = false; sendCode(); return; }
+      s.jpass = '';
+      s.asked = true;
+    } catch (e) { s.err = e.message; s.code = ''; } finally { L.busy = false; render(); }
   }
   async function verify() {
     const s = L.signin;

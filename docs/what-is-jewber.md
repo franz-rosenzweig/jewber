@@ -4,7 +4,11 @@ Jewber is a ride app with exactly one driver, me, and a handful of riders, my fr
 
 ## Who can use it
 
-Only people I've added. I put your email in my list, and you get an email from Jewber with the link and buttons for the Android and iPhone app. If you found Jewber some other way, the sign-in screen has "New here? Ask to join": you leave your name, I get a message, and I say yes or no. If it's yes, the same invitation email goes out.
+Only people I've said yes to. There are two ways in.
+
+The usual way is the sign-up link, jewber.tiresia.xyz/join, which I hand out (it's also "New here? Sign up" on the sign-in screen). You fill in your name, email, phone # and how we know each other, and a password if you'd like one. Jewber emails you a code to make sure the email is really yours, and once you type it in, you're on my list to approve. When I say yes, your account is made right then, and you get a "You're in" email. You can sign in with the password you chose, or with a code by email.
+
+The other way is that I add you myself, with your name and email, and you get an invitation email with the link and buttons for the Android and iPhone app.
 
 ## Signing in
 

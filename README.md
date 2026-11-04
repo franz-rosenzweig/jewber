@@ -41,7 +41,7 @@ It does everything you'd expect from a ride app. My friends ask for a ride on a 
   - **Directions:** turn-by-turn with a voice, a map that turns with you, rerouting, and "You've arrived". Or have it open Waze or Google Maps by itself.
   - **The ledger:** the money, the babkas, who owes what, PayPal payments with refunds, and a tzedakah jar.
 - **Shabbat and the calendar:** it closes 30 minutes before candle lighting and opens at havdalah. The Hebrew date and the parsha are on the home screen, and the holidays change the greeting and the look.
-- **Signing in:** a 6-digit code by email, or a username and password if you set one. Only friends the driver adds can sign in, anyone else can ask to join, and the emails (the invitation, the code, a nudge about the tab) come dressed up in Jewber's colors.
+- **Signing in:** a 6-digit code by email, or a username and password if you set one. Friends either sign up from a shared link (/join, email proven by a code) and wait for the driver's approval, or the driver adds them by hand, and the emails (the invitation, the code, a nudge about the tab) come dressed up in Jewber's colors.
 - **The map:** a locate button that follows you and can turn the map with your phone's compass, two-finger rotate, and a compass that puts north back on top.
 
 ## Screenshots
