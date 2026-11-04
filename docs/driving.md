@@ -16,7 +16,7 @@ A request shows who, which kind of ride (with a hint, like "Ask if they ate" for
 
 ## Directions
 
-After I accept, the screen turns into directions. The banner shows the next turn and how far it is, and a VOICE says it ("In a quarter mile, turn left onto North 7th Street"), over my music, which ducks for it. The speaker button on the banner mutes it. The map turns with me and tilts, and if I drag it, Recenter brings it back. If I miss a turn, it says "Rerouting" and finds a new way.
+After I accept, the screen turns into directions. The banner shows the next turn and how far it is, and a VOICE says it ("In a quarter mile, turn left onto North 7th Street"), over my music, which ducks for it. The speaker button on the banner mutes it. The map turns with me and tilts, and if I drag it, Recenter (or the arrow button) brings it back. The compass button switches to north-up, and the arrow button switches back to the map turning with me. If I miss a turn, it says "Rerouting" and finds a new way.
 
 If I'd rather drive with Waze or Google Maps, the buttons are on the card, and the Directions setting can open one by itself whenever I accept a ride and when I start the trip.
 

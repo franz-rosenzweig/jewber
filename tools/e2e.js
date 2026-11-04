@@ -22,12 +22,15 @@ const run = (args) => new Promise((ok, no) => {
   p.on('exit', (c) => (c ? no(new Error('exit ' + c)) : ok()));
 });
 
+let ipSeq = 0;
+const freshIp = () => `10.9.${Math.floor(++ipSeq / 250)}.${ipSeq % 250}`;
 class Client {
-  constructor(name) { this.name = name; this.cookie = ''; }
+  // ip: as if from another place (Cloudflare's header), for the per-address limits
+  constructor(name, ip) { this.name = name; this.cookie = ''; this.ip = ip; }
   async call(method, p, body) {
     const r = await fetch(BASE + p, {
       method,
-      headers: { 'X-Jewber': '1', 'Content-Type': 'application/json', Cookie: this.cookie },
+      headers: { 'X-Jewber': '1', 'Content-Type': 'application/json', Cookie: this.cookie, ...(this.ip ? { 'cf-connecting-ip': this.ip } : {}) },
       body: body ? JSON.stringify(body) : undefined,
     });
     const sc = r.headers.get('set-cookie');
@@ -88,7 +91,22 @@ const step = (name) => { steps.push(name); console.log('·', name); };
     v = await drv.me();
     assert.equal(v.joins[0].name, 'Yoni');
     await drv.ok('POST', `/api/joins/${encodeURIComponent('who@example.com')}/yes`);
-    assert.ok(fs.readFileSync(path.join(dir, 'outbox.jsonl'), 'utf8').includes('Dovid added you to Jewber'), 'an invitation email');
+    const inv = fs.readFileSync(path.join(dir, 'outbox.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((m) => m.to === 'who@example.com').at(-1);
+    assert.equal(inv.subject, 'Dovid added you to Jewber', 'an invitation email');
+    assert.match(inv.html, /Shalom, Yoni!/, 'dressed up');
+    assert.match(inv.html, /\/get#iphone/);
+    assert.match(inv.text, /\/get#android/, 'with a plain copy too');
+
+    step('the get-the-app page, the visitor\'s phone first');
+    let gp = await fetch(BASE + '/get', { headers: { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_1 like Mac OS X) AppleWebKit/605.1.15 Version/26.1 Mobile/15E148 Safari/604.1' } });
+    let gh = await gp.text();
+    assert.equal(gp.status, 200);
+    assert.match(gh, /<body class="ios-first">/);
+    assert.match(gh, /Add to Home Screen/);
+    assert.match(gh, /href="\/Jewber.apk"/);
+    assert.ok(!gh.includes('{{'), 'every blank filled');
+    gh = await (await fetch(BASE + '/get', { headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 15)' } })).text();
+    assert.match(gh, /<body class="">/);
     v = await who.signIn('who@example.com');
     assert.equal(v.me.name, 'Yoni');
     assert.equal((await drv.me()).joins.length, 0);
@@ -281,6 +299,49 @@ const step = (name) => { steps.push(name); console.log('·', name); };
     await drv.ok('POST', '/api/tzedakah/gave');
     assert.equal((await drv.me()).tzedakah, 0);
     assert.equal((await avi.call('POST', `/api/rides/${tz.id}/pay`, { method: 'cashapp', tip: { kind: 'bracha', text: 'Made up' } })).status, 200, 'an unknown bracha is just no tip');
+
+    step('a username and a password, as well as the code');
+    await avi.ok('POST', '/api/me/login', { username: 'Avi.K', password: 'kugel1234' });
+    v = await avi.me();
+    assert.equal(v.me.username, 'avi.k');
+    assert.equal(v.me.hasPassword, true);
+    await new Promise((ok) => setTimeout(ok, 500));
+    const st = JSON.parse(fs.readFileSync(path.join(dir, 'state.json'), 'utf8'));
+    assert.match(Object.values(st.users).find((x) => x.email === 'avi@example.com').pass, /^scrypt\$/, 'stored hashed');
+    const phone2 = new Client('avi-2', freshIp());
+    let pw = await phone2.call('POST', '/api/auth/password', { login: 'avi.k', password: 'kugel1234' });
+    assert.equal(pw.status, 200);
+    assert.ok(pw.token);
+    assert.equal((await phone2.me()).me.name, 'Avi');
+    assert.equal((await new Client('x', freshIp()).call('POST', '/api/auth/password', { login: 'AVI@example.com', password: 'kugel1234' })).status, 200, 'the email works too, any case');
+    assert.equal((await new Client('x', freshIp()).call('POST', '/api/auth/password', { login: 'avi.k', password: 'wrong-one' })).error, 'wrong-login');
+    assert.equal((await new Client('x', freshIp()).call('POST', '/api/auth/password', { login: 'nobody', password: 'kugel1234' })).error, 'wrong-login', 'the same answer for no such person');
+    assert.equal((await who.call('POST', '/api/me/login', { username: 'avi.k' })).status, 409, 'usernames are unique');
+    assert.equal((await who.call('POST', '/api/me/login', { username: 'x' })).status, 400);
+    assert.equal((await who.call('POST', '/api/me/login', { password: 'short' })).status, 400);
+
+    step('a new password needs the old one, and signs out everywhere else');
+    assert.equal((await avi.call('POST', '/api/me/login', { password: 'latkes5678', current: 'nope' })).error, 'wrong-current');
+    await avi.ok('POST', '/api/me/login', { password: 'latkes5678', current: 'kugel1234' });
+    assert.equal((await phone2.call('GET', '/api/me')).status, 401, 'the other phone is signed out');
+    assert.equal((await avi.call('GET', '/api/me')).status, 200, 'this one stays in');
+    assert.equal((await new Client('x', freshIp()).call('POST', '/api/auth/password', { login: 'avi.k', password: 'kugel1234' })).status, 400);
+    assert.equal((await new Client('x', freshIp()).call('POST', '/api/auth/password', { login: 'avi.k', password: 'latkes5678' })).status, 200);
+
+    step('too many wrong passwords: locked for a while (the code still works)');
+    for (let i = 0; i < 8; i++) await new Client('x', freshIp()).call('POST', '/api/auth/password', { login: 'avi@example.com', password: 'guess' + i });
+    assert.equal((await new Client('x', freshIp()).call('POST', '/api/auth/password', { login: 'avi@example.com', password: 'latkes5678' })).error, 'locked');
+
+    step('removing the password needs it; a removed friend is out either way');
+    assert.equal((await avi.call('DELETE', '/api/me/password', { current: 'nope' })).error, 'wrong-current');
+    await avi.ok('DELETE', '/api/me/password', { current: 'latkes5678' });
+    assert.equal((await avi.me()).me.hasPassword, false);
+    assert.equal((await new Client('x', freshIp()).call('POST', '/api/auth/password', { login: 'avi.k', password: 'latkes5678' })).status, 400);
+    await who.ok('POST', '/api/me/login', { username: 'yoni', password: 'cholent99' });
+    await drv.ok('DELETE', `/api/friends/${encodeURIComponent('who@example.com')}`);
+    assert.equal((await new Client('x', freshIp()).call('POST', '/api/auth/password', { login: 'yoni', password: 'cholent99' })).status, 400);
+    await drv.ok('POST', '/api/friends', { email: 'who@example.com', name: 'Yoni', invite: false });
+    assert.equal((await who.call('POST', '/api/auth/password', { login: 'yoni', password: 'cholent99' })).status, 200, 'back on the list, back in');
 
     step('chutzpah jumps the queue');
     await drv.ok('POST', '/api/driver/duty', { on: false });

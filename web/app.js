@@ -10,6 +10,10 @@
   const ui = $('#ui');
   const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  const onAndroid = /Android/.test(navigator.userAgent);
+  const getHref = isIOS ? '/get#iphone' : onAndroid ? '/get#android' : '/get';
+  const offerApp = !APP && !standalone;
+  const getPillOn = () => { if (!offerApp || !(isIOS || onAndroid)) return false; try { return !localStorage.getItem('jb.getapp'); } catch { return true; } };
 
   let V = null;
   let skew = 0;
@@ -65,6 +69,8 @@
     copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>',
     android: '<rect x="5" y="9" width="14" height="10" rx="2"/><path d="M8 9a4 4 0 0 1 8 0M8 5l1 2M16 5l-1 2M9 13h.01M15 13h.01"/>',
     upload: '<path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v6h14v-6"/>',
+    download: '<path d="M12 3v12M7 10l5 5 5-5M5 20h14"/>',
+    iphone: '<rect x="6" y="2.5" width="12" height="19" rx="3"/><path d="M10.5 18.5h3"/>',
     volume: '<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>',
     mute: '<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M17 9l5 6M22 9l-5 6"/>',
     bolt: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
@@ -261,7 +267,7 @@
   function signedOut() {
     V = null;
     L.screen = 'signin';
-    L.signin = L.signin || { email: '', sent: false, code: '', err: '' };
+    L.signin = L.signin || { email: '', sent: false, code: '', err: '', pw: (() => { try { return localStorage.getItem('jb.signin') === 'password'; } catch { return false; } })() };
     if (APP && APP.signedOut) APP.signedOut();
     render();
   }
@@ -335,20 +341,168 @@
   function ensureMap(kind) {
     if (typeof maplibregl === 'undefined') return;
     if (!map) {
-      map = new maplibregl.Map({ container: 'map', style: STYLES[kind], center: [-112.074, 33.45], zoom: 12, attributionControl: { compact: true }, dragRotate: false, pitchWithRotate: false });
-      map.touchZoomRotate.disableRotation();
+      map = new maplibregl.Map({ container: 'map', style: STYLES[kind], center: [-112.074, 33.45], zoom: 12, attributionControl: { compact: true }, pitchWithRotate: false, touchPitch: false });
+      map.on('rotate', compassTick);
+      map.on('rotatestart', (e) => { if (!e.originalEvent) return; L.userMoved = Date.now(); if (L.locate === 'heading') setLocate('center'); });
+      makeCtl();
       map.on('style.load', () => { mapReady = true; recolor(); addLayers(); lastLines = ''; render(); });
       map.on('movestart', () => { if (L.pin) { L.pin.moving = true; render(); } });
       map.on('moveend', () => { if (L.pin && L.screen === 'pin') pinMoved(); });
       // the attribution stays (OpenStreetMap asks for it), folded to its (i) button
       map.on('load', () => { const a = document.querySelector('.maplibregl-ctrl-attrib'); if (a) a.classList.remove('maplibregl-compact-show'); });
-      map.on('dragstart', () => { L.userMoved = Date.now(); });
+      map.on('dragstart', () => { L.userMoved = Date.now(); if (L.locate) setLocate(null); });
     } else if (kind !== mapKind) {
       mapReady = false;
       map.setStyle(STYLES[kind]);
     }
     mapKind = kind;
   }
+  // ---- the map buttons: where I am, and north ----------------------------------------------
+  // Locate: one tap follows you with the blue dot, a second turns the map with the phone's
+  // compass, a third goes back to north-up. The compass shows when the map is turned; a tap
+  // points it north again. While the driver navigates they switch heading-up and north-up.
+  let ctl = null, lastScene = {}, camPad = null, lastLoc = '', wasFollow = false;
+  function makeCtl() {
+    if (ctl) return;
+    ctl = document.createElement('div');
+    ctl.id = 'mapctl';
+    ctl.hidden = true;
+    ctl.innerHTML = `<button type="button" class="mc compass" data-mc="north" aria-label="North up"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="n" d="M12 2.5l3.6 9.5H8.4z"/><path class="s" d="M12 21.5l-3.6-9.5h7.2z"/><circle cx="12" cy="12" r="1.6" fill="#fff"/></svg></button>`
+      + `<button type="button" class="mc locate" data-mc="locate" aria-label="Where I am" aria-pressed="false"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l18-8-8 18-2-8z"/></svg></button>`;
+    document.body.insertBefore(ctl, ui);
+    ctl.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-mc]');
+      if (!b) return;
+      if (b.dataset.mc === 'north') north(); else locateTap();
+    });
+  }
+  const navving = () => !!(lastScene.follow);
+  const moved = () => !!(L.userMoved && Date.now() - L.userMoved < 15000);
+  function myPos() {
+    if (V && V.me.role === 'driver' && V.driver.onDuty && V.driver.loc) return V.driver.loc;
+    return L.here || null;
+  }
+  function compassTick() {
+    if (!ctl || !map) return;
+    const b = map.getBearing();
+    ctl.querySelector('.compass svg').style.transform = `rotate(${-b}deg)`;
+    ctl.classList.toggle('turned', Math.abs(b) > 0.5 || L.locate === 'heading');
+  }
+  function ctlState() {
+    if (!ctl) return;
+    const on = L.locate || (navving() && !moved() && !L.northUp);
+    const b = ctl.querySelector('.locate');
+    b.classList.toggle('on', !!on);
+    b.classList.toggle('heading', L.locate === 'heading' || (navving() && !moved() && !L.northUp));
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    compassTick();
+  }
+  function placeCtl(sc) {
+    if (!ctl) return;
+    const covered = !V || !!ui.querySelector('.sheet.full, .dpage');
+    let bottom = 24;
+    const sheet = ui.querySelector('.sheet:not(.full), .card, .idle');
+    if (sheet) { const r = sheet.getBoundingClientRect(); if (r.right > innerWidth - 80) bottom = Math.round(innerHeight - r.top + 12); }
+    ctl.hidden = covered || innerHeight - bottom - 110 < 140;
+    ctl.style.bottom = bottom + 'px';
+    ctl.classList.toggle('nolocate', !!sc.pinMode);
+    ctlState();
+  }
+  // Following you: the Android app hands over its freshest fix; a browser watches.
+  let hereWatch = null, herePoll = null;
+  function followHere(on) {
+    if (on && APP && APP.location) { if (!herePoll) herePoll = setInterval(refreshHere, 2500); return; }
+    if (on && navigator.geolocation) {
+      if (hereWatch === null) hereWatch = navigator.geolocation.watchPosition((p) => { L.here = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy }; render(); }, () => {}, { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
+      return;
+    }
+    if (herePoll) { clearInterval(herePoll); herePoll = null; }
+    if (hereWatch !== null) { navigator.geolocation.clearWatch(hereWatch); hereWatch = null; }
+  }
+  function setLocate(mode) {
+    const was = L.locate;
+    L.locate = mode || null;
+    if (mode && !was) L.locateKey = lastScene.fitKey || '';
+    lastLoc = '';
+    followHere(!!mode);
+    if (mode === 'heading') compassOn(); else compassOff();
+    ctlState();
+  }
+  function locCam(duration) {
+    const p = myPos();
+    if (!p || !map) return;
+    const o = { center: ll(p), duration };
+    if (camPad) o.padding = camPad;
+    if (map.getZoom() < 14.5) o.zoom = 16;
+    if (L.locate === 'heading' && typeof L.heading === 'number') o.bearing = L.heading;
+    map.easeTo(o);
+  }
+  function locateTap() {
+    if (!map) return;
+    if (navving()) { L.userMoved = 0; L.northUp = false; render(); return; }
+    if (L.locate === 'center') { setLocate('heading'); locCam(400); return; }
+    if (L.locate === 'heading') { setLocate('center'); map.easeTo({ bearing: 0, duration: 400 }); return; }
+    const p = myPos();
+    setLocate('center');
+    if (p) { locCam(700); return; }
+    getHere().then((h) => {
+      if (!h) { setLocate(null); toast('Location is off'); return; }
+      L.here = h;
+      render();
+    });
+  }
+  function north() {
+    if (!map) return;
+    if (L.locate === 'heading') setLocate('center');
+    if (navving()) { L.northUp = true; L.userMoved = 0; render(); return; }
+    map.easeTo({ bearing: 0, pitch: 0, duration: 450 });
+  }
+  // The phone's compass. iPhones ask first (inside the tap); Android just answers.
+  let compassFn = null, compassEv = '', compassSeen = 0, lastHeadAt = 0, lastHead = null;
+  function compassOn() {
+    if (compassFn) return;
+    compassSeen = 0;
+    lastHead = null;
+    L.heading = null;
+    const D = window.DeviceOrientationEvent;
+    const listen = () => {
+      compassFn = (e) => {
+        let h = null;
+        if (typeof e.webkitCompassHeading === 'number' && e.webkitCompassHeading >= 0) h = e.webkitCompassHeading;
+        else if (e.absolute && typeof e.alpha === 'number') h = 360 - e.alpha;
+        if (h === null) return;
+        const turn = (screen.orientation && screen.orientation.angle) || 0;
+        compassSeen = Date.now();
+        headingTo((h + turn + 360) % 360);
+      };
+      compassEv = 'ondeviceorientationabsolute' in window ? 'deviceorientationabsolute' : 'deviceorientation';
+      addEventListener(compassEv, compassFn);
+    };
+    if (!D) { noCompass(); return; }
+    if (typeof D.requestPermission === 'function') D.requestPermission().then((r) => (r === 'granted' ? listen() : noCompass())).catch(noCompass);
+    else listen();
+    setTimeout(() => { if (L.locate === 'heading' && !compassSeen) noCompass(); }, 2500);
+  }
+  function compassOff() {
+    if (compassFn) removeEventListener(compassEv, compassFn);
+    compassFn = null;
+  }
+  function noCompass() {
+    if (L.locate !== 'heading') return;
+    setLocate('center');
+    toast('No compass on this device');
+  }
+  function headingTo(h) {
+    L.heading = h;
+    if (L.locate !== 'heading' || !map) return;
+    const now = Date.now();
+    if (now - lastHeadAt < 120) return;
+    if (lastHead !== null && Math.abs(((h - lastHead + 540) % 360) - 180) < 1.5) return;
+    lastHeadAt = now;
+    lastHead = h;
+    locCam(250);
+  }
+
   // The free styles, recoloured: Jerusalem stone by day for friends, Selene navy for the driver.
   function recolor() {
     const dark = mapKind === 'dark';
@@ -434,7 +588,8 @@
     if (!map || !mapReady) return;
     moveCar(sc.car, dark);
     marker('carTag', sc.carTag ? ll(sc.car) : null, () => `<div class="mk-tag">${esc(sc.carTag)}</div>`, { anchor: 'bottom', offset: [0, -30], key: sc.carTag });
-    marker('me', ll(sc.me), () => '<div class="mk-me"></div>');
+    const onDuty = V.me.role === 'driver' && V.driver.onDuty && V.driver.loc;
+    marker('me', ll(sc.me || (L.locate && !onDuty ? L.here : null)), () => '<div class="mk-me"></div>');
     marker('pick', ll(sc.pick), () => `<div class="mk-pick ${sc.pickGold ? 'gold' : ''} ${sc.pickPulse ? 'pulse' : ''}"></div>`, { key: `${sc.pickGold}${sc.pickPulse}` });
     const edit = sc.tagsEdit ? `<svg class="i" viewBox="0 0 24 24" style="width:14px;height:14px;margin-left:6px;vertical-align:-2px">${P.pin}</svg>` : '';
     marker('pickTag', sc.pickTag ? ll(sc.pick) : null, () => `<div class="mk-tag white">${esc(sc.pickTag)}${edit}</div>`, { anchor: 'left', offset: [16, 0], key: sc.pickTag + edit, onClick: sc.tagsEdit ? () => startPin('pick') : null });
@@ -451,15 +606,32 @@
     const bottom = sheet ? Math.min(sheet.offsetHeight, innerHeight * 0.7) + 24 : 40;
     const wide = innerWidth >= 720;
     const pad = { top, bottom: wide ? 40 : bottom, left: wide ? 470 : 40, right: 40 };
+    lastScene = sc;
+    camPad = pad;
+    placeCtl(sc);
     if (sc.pinMode) return;
-    if (sc.follow && !(L.userMoved && Date.now() - L.userMoved < 15000)) {
-      const o = { center: ll(sc.follow), zoom: Math.max(map.getZoom(), 16), padding: pad, duration: 900, pitch: 50 };
+    if (sc.follow) {
+      if (L.locate) setLocate(null);
+      // the driver looked around: the map stays put until Recenter (or 15 seconds)
+      if (moved()) return;
+      wasFollow = true;
+      const o = { center: ll(sc.follow), zoom: Math.max(map.getZoom(), 16), padding: pad, duration: 900, pitch: L.northUp ? 0 : 50 };
       const h = sc.follow.heading;
-      if (h !== null && h !== undefined && !((sc.follow.speed || 0) < 1.5 && sc.follow.speed !== null && sc.follow.speed !== undefined)) o.bearing = h;
+      if (L.northUp) o.bearing = 0;
+      else if (h !== null && h !== undefined && !((sc.follow.speed || 0) < 1.5 && sc.follow.speed !== null && sc.follow.speed !== undefined)) o.bearing = h;
       map.easeTo(o);
       return;
     }
-    if (map.getPitch() || map.getBearing()) map.jumpTo({ pitch: 0, bearing: 0 });
+    if (wasFollow) { wasFollow = false; L.northUp = false; map.jumpTo({ pitch: 0, bearing: 0 }); }
+    if (map.getPitch()) map.jumpTo({ pitch: 0 });
+    // something new on screen (a ride, a different page) takes the map back from Locate
+    if (L.locate && (sc.fitKey || '') !== L.locateKey) setLocate(null);
+    if (L.locate) {
+      const p = myPos();
+      const k = p ? `${p.lat.toFixed(5)},${p.lng.toFixed(5)}|${pad.top}|${pad.bottom}|${pad.left}` : '';
+      if (k && k !== lastLoc) { lastLoc = k; locCam(700); }
+      return;
+    }
     const pts = (sc.fit || []).filter(Boolean);
     const key = `${sc.fitKey || ''}|${pad.bottom}|${pad.top}`;
     if (!pts.length || key === lastFit) return;
@@ -528,6 +700,7 @@
     if (entering) { ui.classList.add('enter'); lastHtml = ''; }
     patch(out.html + extra);
     if (V) drawScene(out.scene || {});
+    else if (ctl) ctl.hidden = true;
   }
 
   // A burst of gold and blue Stars of David, once per arrival.
@@ -568,16 +741,12 @@
   // ---- sign in --------------------------------------------------------------------------
   function scrSignin() {
     const s = L.signin;
+    if (s.pw) return scrPassword(s);
     const digits = (s.code || '').split('');
     const boxes = Array.from({ length: 6 }, (_, i) => `<span class="${digits[i] ? 'f' : i === digits.length ? 'c' : ''}">${esc(digits[i] || '')}</span>`).join('');
     return {
       html: `
-      <div class="hero">
-        <svg class="skyline" viewBox="0 0 390 70" preserveAspectRatio="xMidYMax slice" aria-hidden="true"><path fill="#fff" d="M0 70V52h14v-6h6v6h10V40h8v-6h6v6h8v30zM60 70V48h6v-5h5v5h6v-5h5v5h6V30a14 14 0 0 1 28 0v40zM118 70V54h20v-8h6v8h14V44h4v-6h4v6h4v26zM176 70V50h8V30c0-4 6-4 6 0v14h6v-8c0-4 6-4 6 0v12h4v22zM212 70V56h22v-4h6v4h18V42h10v-6h10v6h10v28zM290 70V46h4v-5h5v5h5v-5h5v5h5V36h16v34zM342 70V44c0-5 7-5 7 0v8h7V34c0-5 7-5 7 0v18h8v-8c0-5 7-5 7 0v26z"/></svg>
-        <div class="road"></div>
-        <div class="logo">Jewber</div>
-        <svg class="car" width="170" height="78" viewBox="0 0 170 78" aria-hidden="true"><rect x="70" y="2" width="30" height="13" rx="4" fill="#F5B82E"/><path d="M80 12h10" stroke="#111216" stroke-width="2.4" stroke-linecap="round"/><path d="M14 56V44c0-6 4-9 10-10l24-3 16-15c3-2 6-3 10-3h30c6 0 10 2 13 6l11 13 22 4c6 1 10 5 10 11v9z" fill="#fff"/><path d="M54 32l13-13c1.5-1 3-1.5 5-1.5h12V32z" fill="#9EB0F5"/><path d="M89 17.5h14c3 0 5.5 1 7 3l9 11.5H89z" fill="#9EB0F5"/><circle cx="44" cy="58" r="13" fill="#111216"/><circle cx="44" cy="58" r="5" fill="#C9CBD1"/><circle cx="128" cy="58" r="13" fill="#111216"/><circle cx="128" cy="58" r="5" fill="#C9CBD1"/><rect x="150" y="42" width="8" height="5" rx="2" fill="#F5B82E"/></svg>
-      </div>
+      ${scrSignin.hero}
       <form class="signin" data-form="${s.join ? 'join' : s.sent ? 'verify' : 'code'}">
         <div><label class="lab" for="email">Email</label>
         <input id="email" class="field" type="email" autocomplete="email" inputmode="email" data-bind="signin.email" value="${esc(s.email)}" ${s.sent ? 'readonly' : ''} required></div>
@@ -586,9 +755,34 @@
         <div class="err" role="alert">${esc(s.err || '')}</div>
         <div class="spacer"></div>
         ${s.asked ? `<div class="say">${icon('check')}Sent. You'll get an email.</div>` : `<button class="btn" type="submit" ${L.busy ? 'disabled' : ''}>${s.join ? 'Ask to join' : s.sent ? 'Sign in' : 'Send code'}</button>`}
-        ${s.sent ? '<button class="link" type="button" data-act="newCode">New code</button>' : s.join || s.asked ? '<button class="link muted" type="button" data-act="backToSignIn">Sign in</button>' : '<button class="link muted" type="button" data-act="askJoin">New here? Ask to join</button>'}
+        ${s.sent ? '<button class="link" type="button" data-act="newCode">New code</button>' : s.join || s.asked ? '<button class="link muted" type="button" data-act="backToSignIn">Sign in</button>' : '<div class="row" style="justify-content:center;gap:18px"><button class="link" type="button" data-act="usePw">Use a password</button><button class="link muted" type="button" data-act="askJoin">New here? Ask to join</button></div>'}
+        ${offerApp && !s.sent && !s.join && !s.asked ? `<a class="link muted getlink" href="${getHref}">${icon('download')}Get the app</a>` : ''}
       </form>`,
     };
+  }
+
+  scrSignin.hero = `
+      <div class="hero">
+        <svg class="skyline" viewBox="0 0 390 70" preserveAspectRatio="xMidYMax slice" aria-hidden="true"><path fill="#fff" d="M0 70V52h14v-6h6v6h10V40h8v-6h6v6h8v30zM60 70V48h6v-5h5v5h6v-5h5v5h6V30a14 14 0 0 1 28 0v40zM118 70V54h20v-8h6v8h14V44h4v-6h4v6h4v26zM176 70V50h8V30c0-4 6-4 6 0v14h6v-8c0-4 6-4 6 0v12h4v22zM212 70V56h22v-4h6v4h18V42h10v-6h10v6h10v28zM290 70V46h4v-5h5v5h5v-5h5v5h5V36h16v34zM342 70V44c0-5 7-5 7 0v8h7V34c0-5 7-5 7 0v18h8v-8c0-5 7-5 7 0v26z"/></svg>
+        <div class="road"></div>
+        <div class="logo">Jewber</div>
+        <svg class="car" width="170" height="78" viewBox="0 0 170 78" aria-hidden="true"><rect x="70" y="2" width="30" height="13" rx="4" fill="#F5B82E"/><path d="M80 12h10" stroke="#111216" stroke-width="2.4" stroke-linecap="round"/><path d="M14 56V44c0-6 4-9 10-10l24-3 16-15c3-2 6-3 10-3h30c6 0 10 2 13 6l11 13 22 4c6 1 10 5 10 11v9z" fill="#fff"/><path d="M54 32l13-13c1.5-1 3-1.5 5-1.5h12V32z" fill="#9EB0F5"/><path d="M89 17.5h14c3 0 5.5 1 7 3l9 11.5H89z" fill="#9EB0F5"/><circle cx="44" cy="58" r="13" fill="#111216"/><circle cx="44" cy="58" r="5" fill="#C9CBD1"/><circle cx="128" cy="58" r="13" fill="#111216"/><circle cx="128" cy="58" r="5" fill="#C9CBD1"/><rect x="150" y="42" width="8" height="5" rx="2" fill="#F5B82E"/></svg>
+      </div>
+`;
+
+  function scrPassword(s) {
+    const html = scrSignin.hero + `
+      <form class="signin" data-form="password">
+        <div><label class="lab" for="login">Email or username</label>
+        <input id="login" class="field" autocomplete="username" autocapitalize="none" spellcheck="false" data-bind="signin.login" value="${esc(s.login || s.email || '')}" required></div>
+        <div><label class="lab" for="pass">Password</label>
+        <input id="pass" class="field" type="password" autocomplete="current-password" data-bind="signin.pass" value="${esc(s.pass || '')}" required></div>
+        <div class="err" role="alert">${esc(s.err || '')}</div>
+        <div class="spacer"></div>
+        <button class="btn" type="submit" ${L.busy ? 'disabled' : ''}>Sign in</button>
+        <button class="link" type="button" data-act="useCode">Use a code instead</button>
+      </form>`;
+    return { html };
   }
 
   // ---- the friends' side ----------------------------------------------------------------
@@ -644,7 +838,7 @@
       const d = V.driver;
       return {
         html: `
-        <div class="top"><button type="button" class="pill" data-act="logo" aria-label="Jewber"><span class="logo">Jewber</span></button><div class="row">${HOLIDAY_CHIP[cal().holiday] ? `<div class="pill gold">${esc(HOLIDAY_CHIP[cal().holiday]())}</div>` : ''}${shabbatChip()}<button class="round" data-act="go" data-to="account" aria-label="Account" style="${V.me.photo ? `background:center/cover url('${esc(V.me.photo)}')` : ''}">${V.me.photo ? '' : initial(V.me.name)}</button></div></div>
+        <div class="top"><button type="button" class="pill" data-act="logo" aria-label="Jewber"><span class="logo">Jewber</span></button><div class="row">${HOLIDAY_CHIP[cal().holiday] ? `<div class="pill gold">${esc(HOLIDAY_CHIP[cal().holiday]())}</div>` : getPillOn() ? `<button type="button" class="pill getapp" data-act="getApp">${icon('download')}Get the app</button>` : ''}${shabbatChip()}<button class="round" data-act="go" data-to="account" aria-label="Account" style="${V.me.photo ? `background:center/cover url('${esc(V.me.photo)}')` : ''}">${V.me.photo ? '' : initial(V.me.name)}</button></div></div>
         <section class="sheet flush" data-keep="home">
           <div class="handle"></div>
           <div class="hello"><div class="col"><div class="kicker">${esc(new Date(T()).toLocaleDateString([], { weekday: 'long' }))} · ${esc(hebDate(T()))}${cal().parsha && [4, 5, 6].includes(new Date(T()).getDay()) ? ` · ${esc(cal().parsha)}` : ''}</div><div class="display">${esc(greeting())}, ${esc(V.me.name)}</div></div></div>
@@ -950,6 +1144,11 @@
             <div class="col grow" style="gap:8px"><input id="a-name" class="field" data-save="name" value="${esc(me.name)}" autocomplete="name" aria-label="Name">${me.photo ? '<button class="link muted" style="align-self:flex-start;padding:0;height:30px" data-act="photoOff">Remove photo</button>' : ''}</div>
           </div>
           <div><label class="lab" for="a-phone">Phone</label><input id="a-phone" class="field" type="tel" data-save="phone" value="${esc(me.phone)}" autocomplete="tel"></div>
+          <div class="col" style="gap:10px"><div class="kicker">Signing in</div>
+            <div><label class="lab" for="a-username">Username</label><input id="a-username" class="field" data-login="username" value="${esc(me.username)}" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="24"></div>
+            <button type="button" class="switchrow" data-act="mPassword" data-mode="set">${icon('gear')}<span class="grow">${me.hasPassword ? 'Change password' : 'Set a password'}</span>${icon('chev')}</button>
+            ${me.hasPassword ? '<button type="button" class="link muted" style="align-self:flex-start;padding:0;height:32px" data-act="mPassword" data-mode="remove">Remove password</button>' : ''}
+          </div>
           ${text('bio', 'About', 'Three words your Bubbe would use', true)}
           ${text('shul', 'Shul', 'Where you daven')}
           ${pick('kugel', V.profileOpts.kugel)}
@@ -961,8 +1160,7 @@
           <div class="col" style="gap:8px"><div class="kicker">Theme</div><div class="themes">${['auto', 'light', 'dark'].map((t) => `<button type="button" class="tip ${themePref() === t ? 'on' : ''}" data-act="setTheme" data-id="${t}" aria-pressed="${themePref() === t}">${{ auto: 'Auto', light: 'Light', dark: 'Dark' }[t]}</button>`).join('')}</div></div>
           <button type="button" class="switchrow ${soundsOn() ? 'on' : ''}" data-act="sounds" aria-pressed="${soundsOn()}">${icon('volume')}<span class="grow">Sounds</span><span class="toggle"></span></button>
           ${pushOk ? `<button type="button" class="switchrow ${me.push ? 'on' : ''}" data-act="push">${icon('bell')}<span class="grow">Notifications</span><span class="toggle"></span></button>` : ''}
-          ${!APP && /Android/.test(navigator.userAgent) && V.app ? `<a class="switchrow" href="/Jewber.apk" style="text-decoration:none">${icon('android')}<span class="grow">Android app</span><span class="muted">${esc(V.app.version)}</span></a>` : ''}
-          ${isIOS && !standalone ? `<div class="switchrow">${icon('upload')}<span class="grow">Share → Add to Home Screen</span></div>` : ''}
+          ${offerApp ? `<a class="switchrow" href="${getHref}" style="text-decoration:none">${icon(isIOS ? 'iphone' : 'android')}<span class="grow">Get the app</span>${icon('chev')}</a>` : ''}
           <button class="btn out" data-act="signOut">${icon('out')}Sign out</button>
           <div class="spacer"></div>
           ${dark ? '' : tabsNav('account')}
@@ -1218,7 +1416,7 @@
             ${row('mCity', 'Shabbat times', V.shabbat.cityName + (s.city === 'auto' ? ' (auto)' : ''))}
             <button type="button" class="drow" data-act="signalToggle"><span class="grow">Signal pings</span><span class="toggle ${s.signal ? 'on' : ''}" style="${s.signal ? 'background:var(--gold)' : ''}"></span></button>
             ${pushOk ? `<button type="button" class="drow" data-act="push"><span class="grow">Notifications here</span><span class="toggle ${V.me.push ? 'on' : ''}" style="${V.me.push ? 'background:var(--gold)' : ''}"></span></button>` : ''}
-            ${V.app ? `<a class="drow" href="/Jewber.apk" style="text-decoration:none"><span class="grow">Android app</span><small>${esc(V.app.version)}</small>${icon('chev')}</a>` : ''}
+            <a class="drow" href="/get" style="text-decoration:none"><span class="grow">Get the app</span>${V.app ? `<small>${esc(V.app.version)}</small>` : ''}${icon('chev')}</a>
           </div>
           ${V.tzedakah ? `<div class="dbox glow"><div class="row between"><div class="col"><div class="kicker">Tzedakah jar</div><div class="big-num" style="font-size:34px">${usd(V.tzedakah)}</div></div><button class="gbtn fill" data-act="gave">Gave it</button></div></div>` : ''}
           ${(V.brachotGot || []).length ? `<div class="sec kicker">Brachot</div><div class="col" style="gap:8px">${V.brachotGot.slice(0, 5).map((b) => `<div class="friend"><span class="pm babka" style="width:40px;height:40px;border-radius:20px">${icon('heart')}</span><div class="grow"><b>${esc(b.text)}</b><small>${esc(b.name)} · ${esc(whenText(b.at))}</small></div></div>`).join('')}</div>` : ''}
@@ -1393,6 +1591,20 @@
         <label class="sr" for="m-kv">Kvetch</label><textarea id="m-kv" class="field" style="height:120px;padding:12px 14px;resize:none" data-bind="modal.text" maxlength="500">${esc(L.modal.text || '')}</textarea>
         <button class="btn" data-act="sendKvetch" ${L.busy ? 'disabled' : ''}>Send</button>
       </div>`;
+    },
+    password() {
+      const m = L.modal;
+      const dark = V.me.role === 'driver';
+      const remove = m.mode === 'remove';
+      const field = (id, label, key, auto) => `<div><label class="lab" for="${id}">${label}</label><input id="${id}" class="field" type="password" autocomplete="${auto}" data-bind="modal.${key}" value="${esc(m[key])}"></div>`;
+      return `<div class="scrim" data-act="closeModal"></div><form class="modal ${dark ? 'night' : ''}" role="dialog" aria-label="Password" data-form="savePassword">
+        <div class="handle"></div><div class="h2">${remove ? 'Remove password' : V.me.hasPassword ? 'Change password' : 'Set a password'}</div>
+        <input type="text" class="sr" autocomplete="username" value="${esc(V.me.username || V.me.email)}" tabindex="-1" aria-hidden="true">
+        ${V.me.hasPassword ? field('pw-current', 'Current password', 'current', 'current-password') : ''}
+        ${remove ? '' : field('pw-next', 'New password', 'next', 'new-password') + field('pw-again', 'Again', 'again', 'new-password')}
+        <div class="err" role="alert">${esc(m.err || '')}</div>
+        <button class="btn ${dark ? 'gold' : ''}" type="submit" ${L.busy ? 'disabled' : ''}>${remove ? 'Remove' : 'Save'}</button>
+      </form>`;
     },
     bracha() {
       return `<div class="scrim" data-act="closeModal"></div><div class="modal" role="dialog" aria-label="Bracha">
@@ -1785,6 +1997,17 @@
     delPlace: (el) => act(async () => { await api('DELETE', `/api/places/${el.dataset.id}`); }),
     push: () => act(togglePush),
     signOut: () => act(async () => { await api('POST', '/api/auth/out'); if (es) es.close(); es = null; L.signin = { email: '', sent: false, code: '', err: '' }; signedOut(); }),
+    usePw: () => { const s = L.signin; L.signin = { ...s, pw: true, err: '', login: s.email }; render(); setTimeout(() => { const el = $(L.signin.login ? '#pass' : '#login'); if (el) el.focus(); }, 50); },
+    useCode: () => { const s = L.signin; L.signin = { email: s.login && s.login.includes('@') ? s.login : s.email || '', sent: false, code: '', err: '', pw: false }; try { localStorage.setItem('jb.signin', 'code'); } catch {} render(); },
+    mPassword: (el) => { L.modal = { kind: 'password', mode: el.dataset.mode || 'set', current: '', next: '', again: '', err: '' }; render(); setTimeout(() => { const f = $('#pw-current') || $('#pw-next'); if (f) f.focus(); }, 50); },
+    savePassword: () => act(async () => {
+      const m = L.modal;
+      if (m.mode === 'remove') { await api('DELETE', '/api/me/password', { current: m.current }); L.modal = null; toast('Password removed. Codes it is.'); return; }
+      if (m.next !== m.again) { m.err = "The two passwords don't match"; return; }
+      await api('POST', '/api/me/login', { password: m.next, current: m.current });
+      L.modal = null;
+      toast(V.me.hasPassword ? 'Password changed' : 'Password set. Sababa.');
+    }),
     newCode: () => { L.signin = { email: L.signin.email, sent: false, code: '', err: '' }; render(); },
     askJoin: () => { L.signin.join = true; L.signin.err = ''; render(); setTimeout(() => { const el = $('#email'); if (el && !el.value) el.focus(); else { const n = $('#jname'); if (n) n.focus(); } }, 50); },
     backToSignIn: () => { L.signin = { email: L.signin.email, sent: false, code: '', err: '' }; render(); },
@@ -1804,6 +2027,7 @@
     skipRate: (el) => act(async () => { await api('POST', `/api/rides/${el.dataset.id}/skip-rating`); }),
     voice: () => { voice.on = !voice.on; try { localStorage.setItem('jb.voice', voice.on ? 'on' : 'off'); } catch {} if (!voice.on) { if (APP && APP.stopSpeaking) try { APP.stopSpeaking(); } catch {} else if ('speechSynthesis' in window) speechSynthesis.cancel(); } else say('Directions on.'); render(); },
     recenter: () => { L.userMoved = 0; render(); },
+    getApp: () => { try { localStorage.setItem('jb.getapp', '1'); } catch {} location.href = getHref; },
     mTheme: () => { L.modal = { kind: 'theme' }; render(); },
     setTheme: (el) => { try { localStorage.setItem('jb.theme', el.dataset.id); } catch {} lastSync = ''; syncApp(); render(); },
     mNavApp: () => { L.modal = { kind: 'navApp' }; render(); },
@@ -1886,6 +2110,7 @@
   document.addEventListener('change', (e) => {
     const el = e.target;
     if (ui.contains(el) && el.dataset.photo) { sendPhoto(el.files && el.files[0]); el.value = ''; return; }
+    if (ui.contains(el) && el.dataset.login) { api('POST', '/api/me/login', { username: el.value }).then(() => toast('Saved')).catch((err) => { toast(err.message); el.value = V.me.username || ''; }); return; }
     if (ui.contains(el) && el.dataset.profile) { api('POST', '/api/me/profile', { [el.dataset.profile]: el.value }).then(() => toast('Saved')).catch((err) => toast(err.message)); return; }
     if (!ui.contains(el) || !el.dataset.save) return;
     const k = el.dataset.save;
@@ -1898,6 +2123,8 @@
     if (f.dataset.form === 'code') sendCode();
     if (f.dataset.form === 'verify') verify();
     if (f.dataset.form === 'join') askToJoin();
+    if (f.dataset.form === 'password') passwordIn();
+    if (f.dataset.form === 'savePassword') ACTS.savePassword();
   });
 
   async function sendCode() {
@@ -1915,6 +2142,23 @@
       // not on the list: offer to ask
       if (e.code === 'not-on-list') { s.join = true; s.err = ''; setTimeout(() => { const el = $('#jname'); if (el) el.focus(); }, 50); } else s.err = e.message;
     } finally { L.busy = false; render(); }
+  }
+  async function passwordIn() {
+    const s = L.signin;
+    if (L.busy) return;
+    s.err = '';
+    L.busy = true;
+    render();
+    try {
+      const j = await api('POST', '/api/auth/password', { login: s.login || s.email, password: s.pass, device: APP ? 'android' : 'web' });
+      try { localStorage.setItem('jb.signin', 'password'); } catch {}
+      if (APP && APP.setToken) APP.setToken(j.token);
+      s.pass = '';
+      L.screen = j.view.me.role === 'driver' ? 'dhome' : 'home';
+      setView(j.view);
+      connect();
+      refreshHere();
+    } catch (e) { s.err = e.message; s.pass = ''; } finally { L.busy = false; render(); }
   }
   async function askToJoin() {
     const s = L.signin;
@@ -1936,6 +2180,7 @@
     render();
     try {
       const j = await api('POST', '/api/auth/verify', { email: s.email, code: s.code, device: APP ? 'android' : 'web' });
+      try { localStorage.setItem('jb.signin', 'code'); } catch {}
       if (APP && APP.setToken) APP.setToken(j.token);
       L.screen = j.view.me.role === 'driver' ? 'dhome' : 'home';
       setView(j.view);

@@ -11,6 +11,10 @@ Account is where you are. Everything saves as you change it.
 
 The Profile button shows your page the way it looks to others: your photo, your rating as a rider, your rides, the compliments I've given you, and my reviews. You can see my page by tapping my face anywhere in the app.
 
+## Signing in
+
+Under Signing in you can pick a username and set a password, so you can sign in with either your email or your username and the password instead of waiting for a code. Changing the password asks for the old one and signs you out everywhere else. Remove password takes it away again, and the email code always works.
+
 ## Light and dark
 
 Auto, Light or Dark, in Account. Auto follows your phone. It's saved per phone, so it can be dark on your phone and light on your laptop.

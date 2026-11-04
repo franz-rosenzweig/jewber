@@ -6,7 +6,7 @@ The Android app is the same Jewber, in a window of its own, plus the things a we
 
 ## Installing and updating
 
-Download the APK from the newest release on the GitHub Releases page and open it (Android 11 or newer). Android asks once to allow installs from your browser, which is normal for apps that don't come from the Play Store. The first time you open it, it asks for location and notifications. Say yes to both, since that's what the app is for.
+It's one app for everyone, friends and the driver. Tap Download on the Get the app page (jewber.tiresia.xyz/get), or take the APK from the newest release on the GitHub Releases page, and open it (Android 11 or newer). Android asks once to allow installs from your browser, which is normal for apps that don't come from the Play Store. The first time you open it, it asks for location and notifications. Say yes to both, since that's what the app is for.
 
 For updates, add the GitHub repo to Obtainium and it picks up every new release by itself. A new version always installs right over the old one, and you stay signed in.
 

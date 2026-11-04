@@ -41,7 +41,8 @@ It does everything you'd expect from a ride app. My friends ask for a ride on a 
   - **Directions:** turn-by-turn with a voice, a map that turns with you, rerouting, and "You've arrived". Or have it open Waze or Google Maps by itself.
   - **The ledger:** the money, the babkas, who owes what, PayPal payments with refunds, and a tzedakah jar.
 - **Shabbat and the calendar:** it closes 30 minutes before candle lighting and opens at havdalah. The Hebrew date and the parsha are on the home screen, and the holidays change the greeting and the look.
-- **Signing in:** a 6-digit code by email, no password. Only friends the driver adds can sign in, and anyone else can ask to join.
+- **Signing in:** a 6-digit code by email, or a username and password if you set one. Only friends the driver adds can sign in, anyone else can ask to join, and the emails (the invitation, the code, a nudge about the tab) come dressed up in Jewber's colors.
+- **The map:** a locate button that follows you and can turn the map with your phone's compass, two-finger rotate, and a compass that puts north back on top.
 
 ## Screenshots
 
@@ -55,8 +56,10 @@ More in the [docs](docs/README.md).
 
 ## Getting it
 
+The site has a Get the app page (`/get`) with these steps for both phones, the visitor's own phone first. The Android app is one app for friends and the driver.
+
 - **Android:** download the APK from the newest release on the [Releases page](../../releases/latest) and open it. Android asks once to allow installs from your browser, which is normal for apps that don't come from the Play Store. To get updates on their own, add this repo's address to Obtainium.
-- **iPhone:** open the site in Safari, then Share → Add to Home Screen. It installs like an app, with its own icon and notifications.
+- **iPhone:** open the site in Safari, tap ⋯ then Share (older iPhones have Share in the toolbar), then Add to Home Screen. It installs like an app, with its own icon and notifications.
 - **Anywhere else:** it's a website, so any browser works.
 
 My own Jewber is just for me and my friends, so it needs an invitation to sign in. If you want your own, everything you need is in this repo, and [Running your own](docs/DEVELOPING.md) explains how.

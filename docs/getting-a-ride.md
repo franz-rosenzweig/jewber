@@ -10,6 +10,12 @@ If the address isn't quite right, or there isn't one, use a pin. "Set on map" is
 
 Your places (Home, Shul, work…) and the last few places you went are one tap away, on the home screen and in "Where to?". You can add and remove places in Account.
 
+## The map
+
+The arrow button at the bottom right of the map shows where you are, with a blue dot, and keeps following you as you move. Tap it again and the map turns with your phone, the way you're facing (an iPhone asks first). A third tap goes back to north-up. Dragging the map lets go.
+
+You can turn the map with two fingers. When it's turned, a compass shows up above the arrow, with its red needle pointing north, and a tap puts north back on top.
+
 ## The kinds of rides
 
 Each one has its own price, and I see which one you picked:

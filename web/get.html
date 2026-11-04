@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Get Jewber</title>
+<meta name="theme-color" content="#1A2E9A">
+<meta name="robots" content="noindex">
+<link rel="icon" type="image/png" href="/icons/favicon.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&amp;family=Rubik:wght@400;500;600;700&amp;display=swap">
+<style>
+:root {
+  --stone: #F2ECE0; --paper: #FBF8F2; --ink: #1C1A17; --body: #4F4A42; --muted: #8A8275; --line: #E6DDCC;
+  --blue: #2347D9; --blue-dk: #1A2E9A; --gold: #F5B82E; --soft: #F1EADC; --chip: #FFFFFF;
+  --shadow: 0 1px 2px rgba(40,30,10,.06), 0 18px 40px -18px rgba(40,30,10,.28);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --stone: #0B1328; --paper: #121C36; --ink: #F4F1EA; --body: #C2C9DE; --muted: #8C96B8; --line: #24315A; --soft: #1A2647; --chip: #1E2B52;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 18px 40px -18px rgba(0,0,0,.7); color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+html { background: var(--stone); }
+body { margin: 0; background: var(--stone); color: var(--ink); font: 16px/1.55 Rubik, system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+a { color: var(--blue); }
+@media (prefers-color-scheme: dark) { a { color: #8FA4FF; } }
+header { background: linear-gradient(180deg, var(--blue-dk) 0%, var(--blue) 72%, #4C6CF0 100%); color: #fff; text-align: center; padding: calc(env(safe-area-inset-top) + 34px) 20px 74px; }
+header img { width: 72px; height: 72px; border-radius: 18px; display: block; margin: 0 auto 14px; box-shadow: 0 10px 26px rgba(0,0,0,.25); }
+h1 { font: 700 40px/1.05 Fraunces, Georgia, serif; margin: 0; letter-spacing: -.01em; }
+.stars { color: var(--gold); letter-spacing: 10px; font-size: 14px; margin-top: 12px; }
+main { max-width: 980px; margin: -46px auto 0; padding: 0 16px calc(env(safe-area-inset-bottom) + 40px); display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+body.ios-first #iphone { order: -1; }
+.card { background: var(--paper); border: 1px solid var(--line); border-radius: 26px; box-shadow: var(--shadow); padding: 26px 24px 24px; scroll-margin-top: 16px; }
+.head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+.head .ic { width: 46px; height: 46px; border-radius: 14px; background: var(--soft); display: flex; align-items: center; justify-content: center; color: var(--blue); flex-shrink: 0; }
+@media (prefers-color-scheme: dark) { .head .ic { color: #8FA4FF; } }
+.head svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+h2 { font: 700 28px/1.1 Fraunces, Georgia, serif; margin: 0; }
+.for { color: var(--muted); font-size: 15px; margin: 2px 0 0; }
+.btn { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 56px; margin: 20px 0 6px; border-radius: 16px; background: linear-gradient(180deg, #F7C352, var(--gold)); color: #1C1A17; font-weight: 700; font-size: 18px; text-decoration: none; box-shadow: 0 8px 20px rgba(233,169,44,.35); }
+.btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.btn.blue { background: var(--blue); color: #fff; box-shadow: 0 8px 20px rgba(35,71,217,.3); }
+.ver { text-align: center; color: var(--muted); font-size: 13px; margin: 0 0 6px; }
+ol { list-style: none; counter-reset: s; margin: 18px 0 0; padding: 0; display: flex; flex-direction: column; gap: 16px; }
+ol li { counter-increment: s; display: grid; grid-template-columns: 32px 1fr; gap: 12px; color: var(--body); }
+ol li::before { content: counter(s); width: 32px; height: 32px; border-radius: 16px; background: var(--blue); color: #fff; font: 700 15px/32px Rubik, sans-serif; text-align: center; }
+ol li b { color: var(--ink); font-weight: 600; }
+.k { display: inline-flex; align-items: center; justify-content: center; vertical-align: -6px; min-width: 26px; height: 26px; padding: 0 6px; border-radius: 8px; background: var(--chip); border: 1px solid var(--line); color: var(--blue); font-weight: 700; }
+.k svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+/* little drawings of Safari */
+.mock { margin: 10px 0 2px; border-radius: 16px; background: var(--soft); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.bar { display: flex; align-items: center; gap: 8px; }
+.bar .addr { flex: 1; height: 36px; border-radius: 18px; background: var(--chip); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 13px; color: var(--muted); }
+.bar .b { width: 36px; height: 36px; border-radius: 18px; background: var(--chip); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; color: var(--muted); }
+.bar .b svg, .row svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.hot { outline: 3px solid var(--gold); outline-offset: 2px; color: var(--blue) !important; }
+.row { display: flex; align-items: center; justify-content: space-between; height: 42px; padding: 0 14px; border-radius: 12px; background: var(--chip); border: 1px solid var(--line); font-size: 14px; color: var(--ink); }
+.row.hot { color: var(--ink) !important; }
+.tog { width: 40px; height: 24px; border-radius: 12px; background: #34C759; position: relative; }
+.tog::after { content: ""; position: absolute; right: 2px; top: 2px; width: 20px; height: 20px; border-radius: 10px; background: #fff; }
+.small { color: var(--muted); font-size: 14px; margin: 18px 0 0; padding-top: 16px; border-top: 1px solid var(--line); }
+.back { display: block; text-align: center; margin: 4px 0 0; grid-column: 1 / -1; color: var(--muted); font-size: 15px; }
+@media (max-width: 760px) {
+  main { grid-template-columns: 1fr; }
+  h1 { font-size: 36px; }
+}
+</style>
+</head>
+<body class="{{first}}">
+<header>
+  <img src="/icons/icon-192.png" width="72" height="72" alt="">
+  <h1>Get Jewber</h1>
+  <div class="stars" aria-hidden="true">&#10017; &#10017; &#10017;</div>
+</header>
+<main>
+  <section class="card" id="android">
+    <div class="head">
+      <span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="9" width="14" height="10" rx="2"/><path d="M8 9a4 4 0 0 1 8 0M8 5l1 2M16 5l-1 2M9 13h.01M15 13h.01"/></svg></span>
+      <div><h2>Android</h2><p class="for">For friends and the driver</p></div>
+    </div>
+    <a class="btn" href="/Jewber.apk"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 20h14"/></svg>Download</a>
+    <p class="ver">{{apk}}</p>
+    <ol>
+      <li><span>Tap <b>Download</b>, then open the file.</span></li>
+      <li><span>If your phone asks, let your browser install apps, then tap <b>Install</b>.</span></li>
+      <li><span>Open Jewber, sign in, and allow <b>location</b> and <b>notifications</b>.</span></li>
+    </ol>
+    <p class="small">Updates come through <a href="https://github.com/ImranR98/Obtainium">Obtainium</a>: add <a href="https://github.com/franz-rosenzweig/jewber">github.com/franz-rosenzweig/jewber</a>.</p>
+  </section>
+
+  <section class="card" id="iphone">
+    <div class="head">
+      <span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="3"/><path d="M10.5 18.5h3"/></svg></span>
+      <div><h2>iPhone</h2><p class="for">Safari, Home Screen</p></div>
+    </div>
+    <a class="btn blue" href="/">Open Jewber</a>
+    <p class="ver">&nbsp;</p>
+    <ol>
+      <li><span>Open Jewber in <b>Safari</b>.</span></li>
+      <li><span>Tap <span class="k">&middot;&middot;&middot;</span> then <b>Share</b> <span class="k"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 12v8h14v-8"/></svg></span>. Older iPhones have <b>Share</b> right in the toolbar.
+        <div class="mock" aria-hidden="true"><div class="bar"><span class="b"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></span><span class="addr">{{host}}</span><span class="b hot">&middot;&middot;&middot;</span></div></div>
+      </span></li>
+      <li><span>Tap <b>Add to Home Screen</b>, keep <b>Open as Web App</b> on, then <b>Add</b>.
+        <div class="mock" aria-hidden="true"><div class="row hot">Add to Home Screen<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8v8M8 12h8"/></svg></div><div class="row">Open as Web App<span class="tog"></span></div></div>
+      </span></li>
+      <li><span>Open Jewber from your Home Screen, sign in, and allow <b>notifications</b>.</span></li>
+    </ol>
+  </section>
+  <a class="back" href="/">{{host}}</a>
+</main>
+</body>
+</html>

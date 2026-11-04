@@ -21,6 +21,7 @@ const geo = require('./lib/geo');
 const shabbat = require('./lib/shabbat');
 const rules = require('./lib/rules');
 const paypal = require('./lib/paypal');
+const emails = require('./lib/emails');
 
 const STATE = process.env.JEWBER_STATE || path.join(__dirname, 'state');
 const PORT = +process.env.JEWBER_PORT || 8525;
@@ -203,7 +204,7 @@ function weekStart() {
 // ---- profiles, chai rides, tzedakah ------------------------------------------------------
 const PROFILE_KEYS = ['bio', 'shul', 'kugel', 'music', 'schmooze', 'languages', 'fact'];
 function profileFields(u) {
-  const out = { photo: u.photo || '', since: u.created };
+  const out = { photo: u.photo || '', since: u.created, username: u.username || '', hasPassword: !!u.pass };
   for (const k of PROFILE_KEYS) out[k] = u[k] || '';
   return out;
 }
@@ -543,7 +544,8 @@ on('POST', '/api/auth/code', async ({ body, req }) => {
   if (!S.allowed[email] && email !== S.settings.driverEmail) fail(403, 'not-on-list', 'Not on the list');
   const code = String(crypto.randomInt(0, 1e6)).padStart(6, '0');
   codes.set(email, { hash: sha(code + email), exp: now() + 10 * 60e3, tries: 0 });
-  await mail.send(email, `Your Jewber code: ${code}`, `${code}\n\nYour Jewber sign-in code. It works for 10 minutes.\n\n${PUBLIC_URL}\n`);
+  const m = emails.code({ code, url: PUBLIC_URL });
+  await mail.send(email, m.subject, m.text, m.html);
   return { ok: true };
 }, { open: true });
 
@@ -560,6 +562,81 @@ on('POST', '/api/auth/verify', async ({ body, req, res }) => {
   const token = newSession(res, req, u, body.device === 'android' ? 'android' : 'web');
   return { ok: true, token, view: viewFor(u) };
 }, { open: true });
+
+// ---- passwords (optional: the email code always works too) ---------------------------------
+// scrypt, the hash and its salt and costs in one string. A username is optional and signs in like the email.
+const SCRYPT = { N: 16384, r: 8, p: 1, len: 64 };
+const scryptAsync = (pw, salt, o) => new Promise((ok, no) => crypto.scrypt(pw, salt, o.len, { N: o.N, r: o.r, p: o.p, maxmem: 64 * 1024 * 1024 }, (e, k) => (e ? no(e) : ok(k))));
+async function hashPass(pw) {
+  const salt = crypto.randomBytes(16);
+  const key = await scryptAsync(pw, salt, SCRYPT);
+  return `scrypt$${SCRYPT.N}$${SCRYPT.r}$${SCRYPT.p}$${salt.toString('base64')}$${key.toString('base64')}`;
+}
+async function checkPass(pw, stored) {
+  const m = /^scrypt\$(\d+)\$(\d+)\$(\d+)\$([^$]+)\$([^$]+)$/.exec(String(stored || ''));
+  if (!m) { await scryptAsync('x', 'y', SCRYPT); return false; }   // same time whether or not there's a password
+  const want = Buffer.from(m[5], 'base64');
+  const got = await scryptAsync(String(pw), Buffer.from(m[4], 'base64'), { N: +m[1], r: +m[2], p: +m[3], len: want.length });
+  return crypto.timingSafeEqual(want, got);
+}
+const cleanUsername = (s) => String(s || '').trim().toLowerCase();
+const validUsername = (s) => /^[a-z0-9][a-z0-9._-]{2,23}$/.test(s);
+const tokenOf = (req) => { const h = String(req.headers.authorization || ''); return h.startsWith('Bearer ') ? h.slice(7).trim() : cookies(req).jb; };
+const pwFails = new Map(); // login -> [times]
+
+on('POST', '/api/auth/password', async ({ body, req, res }) => {
+  const login = String(body.login || '').trim().toLowerCase().slice(0, 254);
+  const pw = String(body.password || '').slice(0, 200);
+  if (!login || !pw) fail(400, 'missing', 'Your email or username, and your password');
+  if (limited('pw:' + ipOf(req), 12, 15 * 60e3)) fail(429, 'slow-down', 'Too many tries. Try again in a few minutes, or use a code.');
+  const fails = (pwFails.get(login) || []).filter((t) => now() - t < 15 * 60e3);
+  if (fails.length >= 8) fail(429, 'locked', 'Too many tries. Use a code, or try again in 15 minutes.');
+  const u = Object.values(S.users).find((x) => x.email === login || (x.username && x.username === login));
+  const ok = await checkPass(pw, u && u.pass);
+  if (!ok || !u || (!S.allowed[u.email] && u.email !== S.settings.driverEmail)) {
+    fails.push(now());
+    pwFails.set(login, fails);
+    fail(400, 'wrong-login', 'Wrong email, username or password');
+  }
+  pwFails.delete(login);
+  const token = newSession(res, req, u, body.device === 'android' ? 'android' : 'web');
+  return { ok: true, token, view: viewFor(u) };
+}, { open: true });
+
+// Username and password, from Account. A new password signs out everywhere else.
+on('POST', '/api/me/login', async ({ u, body, req }) => {
+  if (body.username !== undefined) {
+    const name = cleanUsername(body.username);
+    if (!name) delete u.username;
+    else {
+      if (!validUsername(name)) fail(400, 'bad-username', '3 to 24 letters, numbers, dots, dashes or underscores');
+      if (Object.values(S.users).some((x) => x.id !== u.id && x.username === name)) fail(409, 'taken', 'That username is taken');
+      u.username = name;
+    }
+  }
+  if (body.password !== undefined) {
+    const pw = String(body.password);
+    if (pw.length < 8) fail(400, 'short', 'At least 8 characters');
+    if (pw.length > 200) fail(400, 'long', 'That password is too long');
+    if (u.pass && !(await checkPass(String(body.current || ''), u.pass))) fail(400, 'wrong-current', 'Your current password is wrong');
+    u.pass = await hashPass(pw);
+    u.passSet = now();
+    const keep = sha(tokenOf(req) || '');
+    for (const [k, s] of Object.entries(S.sessions)) if (s.uid === u.id && k !== keep) delete S.sessions[k];
+  }
+  store.save();
+  changed();
+  return viewFor(u);
+});
+
+on('DELETE', '/api/me/password', async ({ u, body }) => {
+  if (u.pass && !(await checkPass(String(body.current || ''), u.pass))) fail(400, 'wrong-current', 'Your current password is wrong');
+  delete u.pass;
+  delete u.passSet;
+  store.save();
+  changed();
+  return viewFor(u);
+});
 
 on('POST', '/api/auth/out', async ({ req, res }) => {
   const h = String(req.headers.authorization || '');
@@ -1000,14 +1077,16 @@ on('POST', '/api/friends/:uid/nudge', async ({ params }) => {
   changed();
   const line = `${driverName()} says hi. Your tab: ${parts.join(' + ')}.`;
   notify(fu.id, 'A little nudge', line, { tag: 'nudge' });
-  mail.send(fu.email, 'A little nudge from Jewber', `${line}\n\nPay it here: ${PUBLIC_URL}\n`).catch((e) => console.error('nudge mail:', e.message));
+  const nm = emails.nudge({ driver: driverName(), name: fu.name, owed: parts.join(' + '), url: PUBLIC_URL });
+  mail.send(fu.email, nm.subject, nm.text, nm.html).catch((e) => console.error('nudge mail:', e.message));
   return { ok: true };
 }, driverOnly);
 
 // Adding a friend sends them an invitation (unless the driver says not to).
 function invite(email, name) {
   const d = driverName();
-  mail.send(email, `${d} added you to Jewber`, `Hi ${name},\n\n${d} added you to Jewber, his ride app for friends.\n\nOpen ${PUBLIC_URL} and sign in with this email (${email}). You'll get a code, no password.\n\nAndroid: ${PUBLIC_URL}/Jewber.apk\niPhone: open the link in Safari, then Share > Add to Home Screen.\n`).catch((e) => console.error('invite mail:', e.message));
+  const m = emails.invite({ driver: d, name, email, url: PUBLIC_URL });
+  mail.send(email, m.subject, m.text, m.html).catch((e) => console.error('invite mail:', e.message));
 }
 
 on('POST', '/api/friends', async ({ body }) => {
@@ -1324,6 +1403,17 @@ async function handle(req, res) {
       return res.end(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Jewber for Android</title>
 <body style="margin:0;padding:32px 20px;background:#F2ECE0;color:#1C1A17;font:16px system-ui,sans-serif"><h1 style="font:600 34px Georgia,serif;margin:0 0 12px">Jewber for Android</h1>
 ${a ? `<p><a href="/apk/${a.file}" style="color:#2347D9;font-weight:600">${a.file}</a> · version ${a.version} · ${(a.size / 1024).toFixed(0)} KB</p><p style="color:#6B6358;font-size:14px">SHA-256 ${a.sha256}</p>` : '<p>No app yet</p>'}</body>`);
+    }
+    // Get the app: Android download and iPhone Home Screen steps, the visitor's own phone first.
+    if (p === '/get' || p === '/get/') {
+      let html;
+      try { html = fs.readFileSync(path.join(WEB, 'get.html'), 'utf8'); } catch { return send(res, 404, { error: 'not-found' }); }
+      const ua = String(req.headers['user-agent'] || '');
+      const ios = /iPhone|iPad|iPod/.test(ua);
+      const a = appInfo();
+      html = html.replace('{{first}}', ios ? 'ios-first' : '').replaceAll('{{host}}', PUBLIC_URL.replace(/^https?:\/\//, '').replace(/[<>&"]/g, '')).replace('{{apk}}', a ? `Version ${String(a.version).replace(/[^\w.-]/g, "")} · ${(a.size / 1048576).toFixed(1)} MB` : '&nbsp;');
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'private, no-cache', 'Content-Security-Policy': CSP, 'Referrer-Policy': 'same-origin', 'X-Content-Type-Options': 'nosniff' });
+      return res.end(req.method === 'HEAD' ? undefined : html);
     }
     const apk = /^\/apk\/(Jewber-[\d.]+\.apk)$/.exec(p);
     if (apk && serveFile(req, res, path.join(STATE, 'dist', apk[1]), { 'Content-Disposition': `attachment; filename="${apk[1]}"`, 'Cache-Control': 'no-store' })) return;
