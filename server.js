@@ -1411,7 +1411,7 @@ ${a ? `<p><a href="/apk/${a.file}" style="color:#2347D9;font-weight:600">${a.fil
       const ua = String(req.headers['user-agent'] || '');
       const ios = /iPhone|iPad|iPod/.test(ua);
       const a = appInfo();
-      html = html.replace('{{first}}', ios ? 'ios-first' : '').replaceAll('{{host}}', PUBLIC_URL.replace(/^https?:\/\//, '').replace(/[<>&"]/g, '')).replace('{{apk}}', a ? `Version ${String(a.version).replace(/[^\w.-]/g, "")} · ${(a.size / 1048576).toFixed(1)} MB` : '&nbsp;');
+      html = html.replace('{{first}}', ios ? 'ios-first' : '').replaceAll('{{host}}', PUBLIC_URL.replace(/^https?:\/\//, '').replace(/[<>&"]/g, '')).replace('{{apk}}', a ? `Version ${String(a.version).replace(/[^\w.-]/g, "")} · ${a.size < 1048576 ? Math.round(a.size / 1024) + ' KB' : (a.size / 1048576).toFixed(1) + ' MB'}` : '&nbsp;');
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'private, no-cache', 'Content-Security-Policy': CSP, 'Referrer-Policy': 'same-origin', 'X-Content-Type-Options': 'nosniff' });
       return res.end(req.method === 'HEAD' ? undefined : html);
     }
