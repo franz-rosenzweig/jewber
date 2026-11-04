@@ -67,10 +67,12 @@
     upload: '<path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v6h14v-6"/>',
     volume: '<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>',
     mute: '<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M17 9l5 6M22 9l-5 6"/>',
+    bolt: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
+    crew: '<circle cx="9" cy="8" r="3.5"/><path d="M2 20a7 7 0 0 1 14 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M22 20a7 7 0 0 0-4-6.3"/>',
   };
   const icon = (n, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${P[n] || ''}</svg>`;
   const starOfDavid = (sz = 14, color = '#F5B82E') => `<svg width="${sz}" height="${sz}" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l8.5 14.7H3.5z" fill="${color}"/><path d="M12 21.5L3.5 6.8h17z" fill="${color}"/></svg>`;
-  const TYPE_ICON = { schlep: 'car', mensch: 'bag', shhh: 'quiet', bubbe: 'bowl', simcha: 'music' };
+  const TYPE_ICON = { schlep: 'car', mensch: 'bag', shhh: 'quiet', bubbe: 'bowl', simcha: 'music', chutzpah: 'bolt', shadchan: 'heart', mishpacha: 'crew' };
   const PLACE_ICON = { home: 'home', shul: 'shul', work: 'work', store: 'store', star: 'star' };
   const TOPPER = {
     chanukah: '<path d="M-6 4h12M0 4v-6M-5 4v-3M-2.5 4v-3M2.5 4v-3M5 4v-3" stroke="#F5B82E" stroke-width="1.3" stroke-linecap="round"/><circle cx="0" cy="-3" r="1.2" fill="#FFB347"/>',
@@ -600,7 +602,7 @@
       return 'nope';
     }
     if (['where', 'choose', 'tab', 'account', 'rides', 'pin', 'profile'].includes(L.screen)) return L.screen;
-    if (V.shabbat.closed) return 'shabbat';
+    if (V.shabbat.closed || (FUN === 'shabbat' && V.shabbat.end)) return 'shabbat';
     return 'home';
   }
 

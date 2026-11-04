@@ -148,7 +148,8 @@ async function signIn(p, email) {
     await avi.click('[data-act="pickResult"]');
     await avi.waitFor('Choose a ride');
     await avi.waitFor('Schlep');
-    await avi.shot('friend-03-choose', 3000);
+    for (let i = 0; i < 40 && (await avi.eval("(document.querySelector('.type .price b') || {}).textContent")) === '…'; i++) await sleep(500);
+    await avi.shot('friend-03-choose', 1200);
     // move the pickup with the pin: tap its label on the map, drag the map, set it
     await avi.eval("document.querySelector('.mk-tag.white').click()");
     await avi.waitFor('Set pickup');
@@ -273,6 +274,9 @@ async function signIn(p, email) {
     await avi.go(BASE + '/?fun=chanukah');
     await avi.waitFor('Where to?');
     await avi.shot('friend-15-chanukah', 3000);
+    await avi.go(BASE + '/?fun=shabbat');
+    await avi.waitFor('Shabbat Shalom');
+    await avi.shot('friend-16-shabbat', 1500);
     await drv.eval("localStorage.setItem('jb.theme', 'light'); true");
     await drv.go(BASE);
     await drv.waitFor('On duty');
