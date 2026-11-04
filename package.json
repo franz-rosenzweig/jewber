@@ -1,0 +1,9 @@
+{
+  "name": "jewber",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Rides from one driver to a handful of friends",
+  "main": "server.js",
+  "scripts": { "start": "node server.js", "test": "node tools/e2e.js" },
+  "engines": { "node": ">=22" }
+}

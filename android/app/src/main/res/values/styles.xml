@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="blue">#2347D9</color>
+    <color name="gold">#F5B82E</color>
+    <color name="ink">#111216</color>
+    <color name="night">#171B22</color>
+    <style name="Jewber" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/blue</item>
+        <item name="android:colorAccent">@color/blue</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>

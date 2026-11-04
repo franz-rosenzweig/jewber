@@ -1,0 +1,72 @@
+// Jewber for Android: a WebView on the live site (the whole interface), plus what a page can't
+// do: the driver's GPS with the screen off, loud ride requests with Accept on the notification,
+// and a ride-in-progress notification for friends. No AndroidX, no Google Play services.
+plugins {
+    id 'com.android.application'
+}
+
+// The address the app opens. Release builds use the real one; a test build can point anywhere:
+//   ./gradlew assembleDebug -PjewberUrl=http://10.0.2.2:8525   (the emulator's view of this machine)
+def jewberUrl = project.findProperty('jewberUrl') ?: 'https://jewber.tiresia.xyz'
+
+android {
+    namespace 'xyz.tiresia.jewber'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'xyz.tiresia.jewber'
+        // 30 (Android 11): edge-to-edge insets and one-shot location fixes
+        minSdk 30
+        targetSdk 36
+        versionCode 3
+        versionName '0.3.0'
+        resValue 'string', 'app_name', 'Jewber'
+        buildConfigField 'String', 'BASE_URL', "\"${jewberUrl}\""
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    // The signing key's properties: android/keystore.properties (never in git), or the file
+    // -PsigningProperties names. storeFile is found beside the properties file. Without one the
+    // release build is unsigned.
+    def secrets = project.hasProperty('signingProperties')
+            ? file(project.property('signingProperties')) : rootProject.file('keystore.properties')
+    signingConfigs {
+        release {
+            if (secrets.exists()) {
+                def props = new Properties()
+                secrets.withInputStream { props.load(it) }
+                def store = new File(props.getProperty('storeFile', 'jewber.keystore'))
+                storeFile store.isAbsolute() ? store : new File(secrets.parentFile, store.path)
+                storePassword props.getProperty('storePassword')
+                keyAlias props.getProperty('keyAlias', 'jewber')
+                keyPassword props.getProperty('keyPassword', props.getProperty('storePassword'))
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (secrets.exists()) signingConfig signingConfigs.release
+        }
+        debug {
+            applicationIdSuffix '.debug'
+            resValue 'string', 'app_name', 'Jewber dev'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        checkReleaseBuilds false
+    }
+}
+
+tasks.withType(JavaCompile).configureEach { options.compilerArgs << '-Xlint:deprecation' }

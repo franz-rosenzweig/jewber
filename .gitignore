@@ -1,0 +1,11 @@
+node_modules/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/keystore.properties
+android/*.keystore
+android/*.apk
+*.log
+state/
+design/Rubik.ttf

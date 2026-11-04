@@ -1,0 +1,24 @@
+# Jewber as a systemd user service (copy to ~/.config/systemd/user/jewber.service and fill in).
+# It runs from a pinned worktree, so edits in your checkout never reach the live app until
+# deploy/deploy.sh moves it.
+[Unit]
+Description=Jewber
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/jewber-live
+ExecStart=/usr/bin/env node server.js
+Environment=JEWBER_STATE=%h/jewber-state
+Environment=JEWBER_PORT=8525
+# where it listens: localhost for a tunnel or reverse proxy, plus any other addresses, comma-separated
+Environment=JEWBER_HOSTS=127.0.0.1
+Environment=JEWBER_URL=https://jewber.example.com
+# PayPal Checkout: an env file with PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET (or paypal.json in the state folder)
+#Environment=JEWBER_PAYPAL_ENV=/path/to/paypal.env
+# A script that pings the driver for requests: NOTIFY TITLE MESSAGE now
+#Environment=JEWBER_NOTIFY=/path/to/notify.sh
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
